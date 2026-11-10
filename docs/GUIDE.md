@@ -217,6 +217,27 @@ git push -u origin main
 - **Own key:** run once with your own key, then search Render's logs for the first few characters
   of the key. Nothing should come up.
 
+### More free keys, faster free tier
+
+A free Groq key handles about 6 persona questions a minute, so one key takes about 7 minutes for a
+full council. To serve more visitors faster, give the site several keys:
+
+```
+GROQ_API_KEYS=gsk_first..., gsk_second..., gsk_third...
+```
+
+(In Render: **Environment → Add Environment Variable**, then save; it redeploys.) `GROQ_API_KEY` still
+works and is used together with the list. The site then:
+
+- checks every key at startup and skips any that are rejected (the log says which, e.g. `3 of 4 groq keys work`)
+- measures each key's limits and adds them up: 3 keys → 18 questions at once, 18 a minute
+- spreads the questions across the keys in turn, and when one key hits its limit, moves that question
+  to the next key straight away; a key whose daily allowance is used up rests for an hour
+
+Visitors still see one "Groq" option. With 3 keys a full council finished in about 1.5 minutes in testing,
+against about 7 with one. The same works for `OPENROUTER_API_KEYS`, `GEMINI_API_KEYS` and the others.
+Use keys from accounts you own, and check each provider's terms on multiple accounts.
+
 ### Seeing who visits: the stats page
 
 Open `https://<your-app>.onrender.com/stats` and paste the `ADMIN_TOKEN` from Render's

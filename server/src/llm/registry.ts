@@ -12,7 +12,7 @@ import { bucketFromRpm, TokenBucket } from "../core/tokenBucket.js";
 import { redactSecrets } from "./redact.js";
 import { createProvider } from "./providers.js";
 import { checkProvider, type ProviderHealth } from "./keyCheck.js";
-import { buildSendPlan, estimateTokensPerCall, planCapacity, probeRateInfo, type Capacity, type RateInfo, type SendPlan } from "./capacity.js";
+import { buildSendPlan, estimateTokensPerCall, PANEL_SIZE, planCapacity, probeRateInfo, type Capacity, type RateInfo, type SendPlan } from "./capacity.js";
 
 /** Stable id the UI uses to pick providers. Mock mode has three "mock" providers, told apart by model. */
 export function providerKey(p: { name: string; model: string }): string {
@@ -21,7 +21,33 @@ export function providerKey(p: { name: string; model: string }): string {
 
 // ---------- managed providers, reused as long as their config and model are unchanged ----------
 
-const managed = new WeakMap<ProviderConfig, { model: string; p: ManagedProvider }>();
+const managed = new WeakMap<ProviderConfig, { model: string; keys: string; p: ManagedProvider }>();
+/** Changes when the set of working keys changes (so the pooled provider is rebuilt). */
+const keySignature = (cfg: ProviderConfig) => (cfg.apiKeys ?? [cfg.apiKey]).join("|");
+
+/**
+ * Check every key of a provider that has several (GROQ_API_KEYS). Keys that fail are dropped from
+ * the pool; the provider works as long as one does. The result describes the whole pool.
+ */
+async function checkPooled(cfg: ProviderConfig): Promise<ProviderHealth> {
+  const keys = cfg.apiKeys ?? [cfg.apiKey];
+  // The first check may fill in an empty model (auto-pick); check the rest against that model.
+  const first = await checkProvider({ ...cfg, apiKey: keys[0], apiKeys: undefined });
+  const model = first.status === "ok" ? first.model : cfg.model;
+  if (!cfg.model && first.status === "ok") cfg.model = model;
+  const rest = await Promise.all(keys.slice(1).map((apiKey) => checkProvider({ ...cfg, model: cfg.model || model, apiKey, apiKeys: undefined })));
+  const all = [first, ...rest];
+  const good = keys.filter((_, i) => all[i].status === "ok" || all[i].status === "unreachable");
+  const bad = all.filter((h) => h.status !== "ok" && h.status !== "unreachable");
+  if (good.length) {
+    cfg.apiKey = good[0];
+    cfg.apiKeys = good.length > 1 ? good : undefined;
+  }
+  const best = all.find((h) => h.status === "ok") ?? all[0];
+  const why: Record<string, string> = { bad_key: "rejected", no_credit: "no credit", quota: "used up today", bad_model: "model not found" };
+  const note = `${good.length} of ${keys.length} ${cfg.name} keys work${bad.length ? `. Not using: ${bad.map((h) => `${h.keyHint} (${why[h.status] ?? h.status})`).join(", ")}` : ""}.`;
+  return { ...best, message: best.status === "ok" ? `${best.message} ${note}`.trim() : best.message, note: [best.note, note].filter(Boolean).join(" ") };
+}
 const cfgOf = new WeakMap<ManagedProvider, ProviderConfig>();
 
 function manage(cfg: ProviderConfig, modelOverride?: string): ManagedProvider {
@@ -36,9 +62,10 @@ function manage(cfg: ProviderConfig, modelOverride?: string): ManagedProvider {
 export function allProviders(): ManagedProvider[] {
   return config.providers.map((cfg) => {
     const hit = managed.get(cfg);
-    if (hit && hit.model === cfg.model) return hit.p;
+    const keys = keySignature(cfg);
+    if (hit && hit.model === cfg.model && hit.keys === keys) return hit.p;
     const p = manage(cfg);
-    managed.set(cfg, { model: cfg.model, p });
+    managed.set(cfg, { model: cfg.model, keys, p });
     return p;
   });
 }
@@ -68,7 +95,7 @@ export function providerHealth(): ProviderHealth[] {
 /** Check keys (all of them by default) and switch off whatever fails. Results replace earlier ones per provider. */
 export async function runHealthChecks(cfgs: ProviderConfig[] = config.providers): Promise<ProviderHealth[]> {
   // checkProvider may fill in an empty model (auto-pick a free one), so look providers up afterwards.
-  const results = await Promise.all(cfgs.map((cfg) => checkProvider(cfg)));
+  const results = await Promise.all(cfgs.map((cfg) => (cfg.apiKeys && cfg.apiKeys.length > 1 ? checkPooled(cfg) : checkProvider(cfg))));
   synthesisCache = null;
   synthesisDisabled = null;
   const all = allProviders();
@@ -177,6 +204,32 @@ export async function measureProvider(p: ManagedProvider, ideaChars?: number, ti
 
   let info: RateInfo = {};
   let note = "";
+  // Several keys: measure each, and the pool can take the sum of what they allow.
+  if (cfg.apiKeys && cfg.apiKeys.length > 1 && mode === "auto") {
+    const per = await Promise.all(
+      cfg.apiKeys.map(async (apiKey) => {
+        const one = await probeRateInfo({ ...cfg, apiKey, apiKeys: undefined }, timeoutMs).then((r) => r.info).catch(() => ({}) as RateInfo);
+        return planCapacity(cfg.name, one, { tokensPerCall, rpmSetting: rpmIsSet(cfg.name) ? cfg.rpm : undefined, rpmFallback: cfg.rpm });
+      }),
+    );
+    const sum = (f: (c: Capacity) => number) => per.reduce((s, c) => s + f(c), 0);
+    const pin = burstFor(cfg.name);
+    const burst = Math.max(1, Math.min(PANEL_SIZE, pin ?? sum((c) => c.burst)));
+    const daily = per.every((c) => c.dailyLeft === null) ? null : sum((c) => c.dailyLeft ?? 0);
+    cap = {
+      now: Math.min(burst, sum((c) => c.now)),
+      burst,
+      perMinute: Math.max(1, sum((c) => c.perMinute)),
+      dailyLeft: daily,
+      tokensPerCall,
+      source: pin ? "setting" : "measured",
+      detail: `${per.length} ${cfg.name} keys work together, so their limits add up. Each key: ${per[0].detail}`,
+      checkedAt: new Date().toISOString(),
+    };
+    p.bucket.reconfigure(cap.burst, cap.perMinute / 60, cap.now);
+    remember(cap);
+    return cap;
+  }
   if (cfg.name !== "mock" && mode === "auto") {
     try {
       info = (await probeRateInfo(cfg, timeoutMs)).info;

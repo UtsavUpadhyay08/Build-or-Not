@@ -8,6 +8,7 @@
  *
  * Output is returned UNVALIDATED; structured.ts validates with zod and re-asks once on failure.
  */
+import { KeyPool } from "./keyPool.js";
 import { config, type ProviderConfig } from "../config.js";
 import { ProviderError } from "../core/retry.js";
 import { postJson } from "./http.js";
@@ -100,6 +101,10 @@ function safeJsonParse(text: unknown): unknown {
 }
 
 export function createProvider(cfg: ProviderConfig, modelOverride?: string): LLMProvider {
+  // Several keys: one pooled provider over a provider per key.
+  if (cfg.apiKeys && cfg.apiKeys.length > 1) {
+    return new KeyPool(cfg.apiKeys.map((apiKey) => createProvider({ ...cfg, apiKey, apiKeys: undefined }, modelOverride)));
+  }
   const model = modelOverride ?? cfg.model;
   switch (cfg.name) {
     case "anthropic":

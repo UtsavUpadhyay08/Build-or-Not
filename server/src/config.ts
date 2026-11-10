@@ -15,6 +15,11 @@ export interface ProviderConfig {
   burst?: number;
   /** The key was pasted on the site rather than read from .env (changes how errors are worded). */
   fromSite?: boolean;
+  /**
+   * Several keys for this provider (the site owner's free keys). apiKey is the first. Calls are
+   * spread across them and their limits add up; a key that's rejected or used up is skipped.
+   */
+  apiKeys?: string[];
   /** OpenRouter only: backup free models it may route to when the first is rate-limited upstream. Filled by the key check. */
   fallbacks?: string[];
 }
@@ -73,14 +78,24 @@ export function cleanKey(raw: string | undefined): string {
   return k;
 }
 
+/**
+ * Every key set for one provider: <NAME>_API_KEY plus <NAME>_API_KEYS (several keys, separated by
+ * commas, spaces or new lines), duplicates removed, in that order.
+ */
+export function keysFor(name: string): string[] {
+  const up = name.toUpperCase();
+  const list = [process.env[`${up}_API_KEY`], ...(process.env[`${up}_API_KEYS`] ?? "").split(/[\s,;]+/)].map(cleanKey).filter(Boolean);
+  return [...new Set(list)];
+}
+
 function buildProviderConfigs(): ProviderConfig[] {
   const out: ProviderConfig[] = [];
-  const anthropicKey = cleanKey(process.env.ANTHROPIC_API_KEY);
-  const openaiKey = cleanKey(process.env.OPENAI_API_KEY);
-  const geminiKey = cleanKey(process.env.GEMINI_API_KEY);
-  const groqKey = cleanKey(process.env.GROQ_API_KEY);
-  const openrouterKey = cleanKey(process.env.OPENROUTER_API_KEY);
-  const opencodeKey = cleanKey(process.env.OPENCODE_API_KEY);
+  const anthropicKey = keysFor("anthropic")[0] ?? "";
+  const openaiKey = keysFor("openai")[0] ?? "";
+  const geminiKey = keysFor("gemini")[0] ?? "";
+  const groqKey = keysFor("groq")[0] ?? "";
+  const openrouterKey = keysFor("openrouter")[0] ?? "";
+  const opencodeKey = keysFor("opencode")[0] ?? "";
   if (anthropicKey) {
     out.push({
       name: "anthropic",
@@ -101,7 +116,12 @@ function buildProviderConfigs(): ProviderConfig[] {
   if (groqKey) out.push({ name: "groq", apiKey: groqKey, model: str("GROQ_MODEL", ""), rpm: defaultRpm("groq") });
   if (opencodeKey) out.push({ name: "opencode", apiKey: opencodeKey, model: str("OPENCODE_MODEL", ""), rpm: defaultRpm("opencode") });
   if (openrouterKey) out.push({ name: "openrouter", apiKey: openrouterKey, model: str("OPENROUTER_MODEL", ""), rpm: defaultRpm("openrouter") });
-  for (const p of out) p.burst = burstFor(p.name);
+  for (const p of out) {
+    p.burst = burstFor(p.name);
+    // Several keys for one provider (e.g. GROQ_API_KEYS): one provider, calls spread over all of them.
+    const keys = keysFor(p.name);
+    if (keys.length > 1) p.apiKeys = keys;
+  }
   return out;
 }
 

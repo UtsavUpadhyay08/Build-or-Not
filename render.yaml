@@ -17,6 +17,8 @@ services:
         sync: false
       - key: GROQ_API_KEY # the site's own key: powers the free tier
         sync: false
+      - key: GROQ_API_KEYS # optional: more free Groq keys, comma-separated; their limits add up
+        sync: false
       - key: IP_HASH_SECRET # hashes visitor IPs for the daily limits; Render generates it
         generateValue: true
       - key: ADMIN_TOKEN # unlocks /stats (your visitor numbers); Render generates it, copy it from Environment
