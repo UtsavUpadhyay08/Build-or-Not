@@ -1,6 +1,7 @@
 import "./env.js"; // must be first: loads .env before config.ts reads process.env
 import { config, MOCK_MODE } from "./config.js";
-import { MongoStore } from "./store/mongoStore.js";
+import { databaseName, MongoStore, redactMongoUri } from "./store/mongoStore.js";
+import { redactSecrets } from "./llm/redact.js";
 import { createApp } from "./app.js";
 import { resumeInterrupted } from "./panel/service.js";
 import { capacityOf, hasUsableProvider, measureAll, panelProviders, runHealthChecks } from "./llm/registry.js";
@@ -10,10 +11,11 @@ async function main() {
   try {
     store = await MongoStore.connect(config.mongoUri);
   } catch (err) {
+    // Never print the URI as-is: it contains the database password.
     console.error(
-      `\nCould not connect to MongoDB at ${config.mongoUri}\n` +
+      `\nCould not connect to MongoDB at ${redactMongoUri(config.mongoUri)} (database "${databaseName(config.mongoUri)}")\n` +
         `  -> Start one with:  docker compose up -d mongo\n` +
-        `  -> or set MONGODB_URI in .env (e.g. a free MongoDB Atlas cluster)\n\n${(err as Error).message}\n`,
+        `  -> or set MONGODB_URI in .env (e.g. a free MongoDB Atlas cluster)\n\n${redactSecrets((err as Error).message, [config.mongoUri])}\n`,
     );
     process.exit(1);
   }

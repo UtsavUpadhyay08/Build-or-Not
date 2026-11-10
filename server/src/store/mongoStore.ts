@@ -40,7 +40,7 @@ export class MongoStore implements Store {
   static async connect(uri: string): Promise<MongoStore> {
     const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
     await client.connect();
-    const db: Db = client.db(); // database name comes from the URI path (default "build-or-not")
+    const db: Db = client.db(databaseName(uri));
     const store = new MongoStore(
       client,
       db.collection<IdeaDoc>("ideas"),
@@ -189,4 +189,20 @@ function fromIdeaDoc({ _id, ...rest }: IdeaDoc): IdeaRecord {
 
 function stripId<T extends { _id: string }>({ _id, ...rest }: T): Omit<T, "_id"> {
   return rest;
+}
+
+/**
+ * The database named in the URI path (`...mongodb.net/build-or-not?...`), or "build-or-not" when the
+ * path is empty. Without this, a URI copied straight from Atlas (which has no path) silently uses
+ * "test", and a user who may only write to one database gets "not allowed to do action".
+ */
+export function databaseName(uri: string): string {
+  const m = uri.match(/^mongodb(?:\+srv)?:\/\/[^/?]+\/([^?]*)/);
+  const name = m?.[1] ? decodeURIComponent(m[1]) : "";
+  return name || "build-or-not";
+}
+
+/** The URI with the username and password hidden, safe to print in logs. */
+export function redactMongoUri(uri: string): string {
+  return uri.replace(/^(mongodb(?:\+srv)?:\/\/)[^@/]*@/, "$1***:***@");
 }
