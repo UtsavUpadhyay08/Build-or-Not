@@ -11,6 +11,7 @@ import { Village } from "./Village";
 import { VSTYLE, explainFailure, planFromServer, sortByArrival, splitName, toV, type Stage, type V } from "./model";
 import { RunOptions, loadRememberedKeys, type KeyMode } from "./RunOptions";
 import { RecentProposals } from "./RecentProposals";
+import { DraftDialog } from "./DraftDialog";
 
 const EMPTY_BRIEF: IdeaBrief = {
   title: "",
@@ -22,11 +23,11 @@ const EMPTY_BRIEF: IdeaBrief = {
 };
 const ASSEMBLY_MS = 2400;
 const STEPS: [Stage, string][] = [
-  ["idle", "Proposal"],
+  ["idle", "Your idea"],
   ["assembly", "Gather"],
-  ["thinking", "Deliberate"],
-  ["deciding", "Pick sides"],
-  ["result", "Verdict"],
+  ["thinking", "Think"],
+  ["deciding", "Vote"],
+  ["result", "Result"],
 ];
 
 export function GamePage() {
@@ -43,6 +44,8 @@ export function GamePage() {
   const [keyMode, setKeyMode] = useState<KeyMode>(() => (loadRememberedKeys().length ? "own" : "free"));
   const [quota, setQuota] = useState<Quota | null>(null);
   const pendingSelect = useRef<string | undefined>(undefined);
+  const [draftOpen, setDraftOpen] = useState(false);
+  const currentBrief = brief;
   const [idea, setIdea] = useState<IdeaRecord | null>(null);
   const [verdicts, setVerdicts] = useState<Map<string, PersonaVerdict>>(new Map());
   const [failures, setFailures] = useState<Map<string, PersonaFailure>>(new Map());
@@ -96,7 +99,7 @@ export function GamePage() {
   }, [councilMeta]);
 
   useEffect(() => {
-    loadMeta().catch((e) => setFormError(`Can't reach the server: ${e.message}. Is it running?`));
+    loadMeta().catch((e) => setFormError(`Can't reach the server (${e.message}). Check that it's running.`));
     void loadQuota();
   }, [loadMeta, loadQuota]);
 
@@ -133,7 +136,7 @@ export function GamePage() {
         setVerdicts(new Map(state.verdicts.map((v) => [v.personaId, v])));
         setFailures(new Map(state.failures.map((f) => [f.personaId, f])));
         setSynthesis(state.synthesis);
-        if (state.idea.status === "failed") setRunError(state.idea.error ?? "The council couldn't reach a verdict.");
+        if (state.idea.status === "failed") setRunError(state.idea.error ?? "No result: too few personas answered.");
         if (state.idea.status !== "running") return;
         unsub.current = api.streamIdea(id, {
           onSnapshot: (snap) => {
@@ -142,7 +145,7 @@ export function GamePage() {
             if (snap.synthesis) setSynthesis(snap.synthesis);
             if (snap.status && snap.status !== "running") {
               setIdea((p) => (p ? { ...p, status: snap.status } : p));
-              if (snap.status === "failed") setRunError(snap.error ?? "The council couldn't reach a verdict.");
+              if (snap.status === "failed") setRunError(snap.error ?? "No result: too few personas answered.");
               stop();
             }
           },
@@ -204,7 +207,8 @@ export function GamePage() {
     if (v) counts[v]++;
   }
 
-  async function submit() {
+  async function submit(override?: IdeaBrief) {
+    const brief = override ?? currentBrief;
     setFormError(null);
     setSubmitting(true);
     try {
@@ -253,15 +257,15 @@ export function GamePage() {
             </span>
           )}
           {v && <span>Score {v.score}/10</span>}
-          {f && <span>No vote counted</span>}
+          {f && <span>Didn’t vote</span>}
         </div>
         <p className="bubble-line">
-          {v ? `“${toV(v.verdict) === "b" ? v.topAppeal : v.topConcern}”` : f ? explainFailure(f, short).short : stage === "idle" ? selPersona.tagline : "Still weighing it up. Their verdict appears the moment it arrives."}
+          {v ? `“${toV(v.verdict) === "b" ? v.topAppeal : v.topConcern}”` : f ? explainFailure(f, short).short : stage === "idle" ? selPersona.tagline : "Still thinking. Their answer shows up here as soon as it’s in."}
         </p>
         <div className="bubble-actions">
           {(v || f) && (
             <button type="button" className="gbtn gbtn-sm" onClick={() => setDrawer(selPersona.id)}>
-              {f ? "Why did they go home? →" : "Read full review →"}
+              {f ? "Why didn’t they vote? →" : "Read their full answer →"}
             </button>
           )}
           <button type="button" className="ghost-dark" onClick={() => setSelected(null)}>
@@ -274,27 +278,53 @@ export function GamePage() {
 
   const judged = verdicts.size;
   const impact = synthesis
-    ? `No. ${judged} of ${total} personas voted, above the 80% the council needs. Their seat is left empty rather than guessed. Ask again later and they get another chance.`
+    ? `No. ${judged} of ${total} voted, and a result only needs 80%. Their vote is left out, not guessed.`
     : idea?.status === "failed"
-      ? "Yes: too few personas answered for a trustworthy verdict, so the council didn’t publish one."
-      : "Their seat stays empty. The verdict will use everyone who answers, as long as at least 80% do.";
+      ? "Yes. Too few personas answered, so there’s no result this time."
+      : "Their vote is left out. The result uses everyone else, as long as at least 80% answer.";
 
   const drawerPersona = drawer ? personas.find((p) => p.id === drawer) : undefined;
 
   const banner = synthesis
-    ? { word: { build: "BUILD IT", maybe: "MIXED", dont_build: "DON’T BUILD" }[synthesis.overallVerdict], score: synthesis.overallScore, color: VSTYLE[toV(synthesis.overallVerdict)].bright }
+    ? { word: { build: "BUILD IT", maybe: "MAYBE", dont_build: "DON’T BUILD" }[synthesis.overallVerdict], score: synthesis.overallScore, color: VSTYLE[toV(synthesis.overallVerdict)].bright }
     : stage === "failed"
-      ? { word: "NO VERDICT", score: "–", color: "#A5B4FC" }
+      ? { word: "NO RESULT", score: "–", color: "#A5B4FC" }
       : null;
 
   const planText = idea?.sendPlan ? planFromServer(idea.sendPlan, total) : null;
+
+  // Why the council can't be summoned right now, if it can't.
+  const runBlocked =
+    keyMode === "own"
+      ? ownKeys.length === 0
+        ? "Add your API key above first."
+        : null
+      : quota && quota.site.left === 0
+        ? `You’ve used your ${quota.site.limit} free runs for today. Use your own key, or come back tomorrow.`
+        : null;
+
+  /** "Just type your idea": the AI drafts the brief on the same key the run will use. */
+  const councilKeys = council.mode === "single" ? (council.single ? [council.single] : []) : council.mixed;
+  const draftKey = keyMode === "own" ? ownKeys.find((k) => councilKeys.includes(k.provider)) ?? ownKeys[0] : undefined;
+  const draftSource =
+    keyMode === "own"
+      ? draftKey
+        ? `your own ${draftKey.provider} key`
+        : "your own key (add it first)"
+      : meta?.mock
+        ? "simulated AI (this site has no AI key)"
+        : `a free run${quota ? ` (${quota.site.left} of ${quota.site.limit} left today)` : ""}`;
+  const draftIdea = (text: string) => {
+    if (keyMode === "own" && !draftKey) return Promise.reject(new Error("Add your API key first."));
+    return api.draftIdea({ idea: text, keyMode, ownKeys: draftKey ? [{ provider: draftKey.provider, apiKey: draftKey.apiKey, model: draftKey.model }] : undefined });
+  };
   const hud = {
-    idle: { title: "The council is at home", sub: `${total} personas · 5 districts`, foot: "Write a proposal, then summon the council." },
-    assembly: { title: "The council is gathering…", sub: "Walking to the square", foot: planText ?? "Each character sets off as their question is sent." },
-    thinking: { title: "The council is deliberating", sub: `0 of ${total} decided`, foot: planText ?? "Everyone thinks alone. Nobody sees anyone else’s answer." },
-    deciding: { title: synthesizing ? "Everyone has answered. Finding the common themes…" : "Verdicts are arriving", sub: `${arrival.length} of ${total} decided`, foot: counts.f ? "Click anyone with a ! on their house to see why they went home." : planText && arrival.length < total ? planText : "Each verdict sends its character to a side." },
-    result: { title: "The council has picked sides", sub: `${arrival.length} of ${total} finished`, foot: "Full results below ↓" },
-    failed: { title: "The council couldn’t reach a verdict", sub: `${judged} of ${total} answered`, foot: runError ?? "" },
+    idle: { title: "Waiting for your idea", sub: `${total} personas in 5 groups`, foot: "Describe your idea on the left, then press “Ask the council”." },
+    assembly: { title: "Everyone is heading to the square…", sub: "Getting ready", foot: planText ?? "Each person sets off when their question is sent." },
+    thinking: { title: "Everyone is thinking", sub: `0 of ${total} answered`, foot: planText ?? "Each persona answers on their own. No one sees the others’ answers." },
+    deciding: { title: synthesizing ? "Everyone has answered. Summing up…" : "Answers are coming in", sub: `${arrival.length} of ${total} answered`, foot: counts.f ? "Tap anyone with a ! on their house to see why they didn’t vote." : planText && arrival.length < total ? planText : "Each answer sends that person to a side." },
+    result: { title: "Everyone has voted", sub: `${arrival.length} of ${total} done`, foot: "Your results are below ↓" },
+    failed: { title: "No result this time", sub: `${judged} of ${total} answered`, foot: runError ?? "" },
   }[stage];
 
   const pips = arrival.map((pid) => VSTYLE[verdictOf(pid)!].solid);
@@ -313,7 +343,7 @@ export function GamePage() {
     setTimeout(() => setCopyLabel("Copy results as Markdown"), 2200);
   }
 
-  const panelModel = meta ? (meta.mock ? "Simulated models (mock mode)" : meta.providers.filter((p) => p.usable).map((p) => `${p.name} / ${p.model}`).join(" · ") || "No working provider") : "Connecting…";
+  const panelModel = meta ? (meta.mock ? "Simulated AI (no key)" : meta.providers.filter((p) => p.usable).map((p) => `${p.name} / ${p.model}`).join(" · ") || "No AI working") : "Connecting…";
 
   return (
     <div className="game">
@@ -328,7 +358,7 @@ export function GamePage() {
             </svg>
             <span>
               <span className="g-brand-name">Build or Not</span>
-              <span className="g-brand-sub">A village of {total} AI personas judges your idea</span>
+              <span className="g-brand-sub">{total} AI personas tell you if your idea is worth building</span>
             </span>
           </Link>
           <ol className="steps" aria-label="Council progress">
@@ -345,7 +375,7 @@ export function GamePage() {
           </ol>
           <div className="g-header-right">
             <Link to="/history" className="g-link">
-              Past proposals
+              All ideas
             </Link>
             <span className="model-chip">
               <span aria-hidden="true" className="ok-dot" />
@@ -366,18 +396,11 @@ export function GamePage() {
               meta={councilMeta}
               locked={false}
               submitting={submitting}
-              submitLabel={submitting ? "Summoning…" : "Summon the council"}
-              onSubmit={submit}
+              submitLabel={submitting ? "Sending…" : "Ask the council"}
+              onSubmit={() => submit()}
+              onQuickStart={() => setDraftOpen(true)}
               error={formError}
-              blocked={
-                keyMode === "own"
-                  ? ownKeys.length === 0
-                    ? "Add your API key above first."
-                    : null
-                  : quota && quota.site.left === 0
-                    ? `You've used today's ${quota.site.limit} free runs. Use your own key to keep going, or come back tomorrow.`
-                    : null
-              }
+              blocked={runBlocked}
               keysSlot={
                 <RunOptions
                   meta={meta}
@@ -401,8 +424,8 @@ export function GamePage() {
         <div className="g-content">
           <section className="g-village-col" aria-labelledby="village-h" ref={villageRef}>
             <div className="g-col-head">
-              <h2 id="village-h">The council village</h2>
-              <span className="muted">{narrow ? "Swipe to explore · tap a character to hear them out" : "Hover a character for their name · click to hear them out"}</span>
+              <h2 id="village-h">The village</h2>
+              <span className="muted">{narrow ? "Swipe to look around. Tap a person to read their answer." : "Hover over a person to see who they are. Click to read their answer."}</span>
             </div>
             <div className="g-village-wrap">
               {personas.length > 0 ? (
@@ -445,7 +468,7 @@ export function GamePage() {
                 <span><i style={{ background: VSTYLE.b.solid }} />{counts.b} build</span>
                 <span><i style={{ background: VSTYLE.m.solid }} />{counts.m} maybe</span>
                 <span><i style={{ background: VSTYLE.d.solid }} />{counts.d} don’t build</span>
-                <span><i style={{ background: VSTYLE.f.solid }} />{counts.f} went home</span>
+                <span><i style={{ background: VSTYLE.f.solid }} />{counts.f} didn’t vote</span>
                 {stage === "result" ? (
                   <button type="button" className="jump-btn" onClick={() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
                     Jump to results ↓
@@ -479,16 +502,28 @@ export function GamePage() {
             {stage === "failed" && (
               <section className="results">
                 <div className="card">
-                  <h2 className="card-h">No verdict this time</h2>
+                  <h2 className="card-h">No result this time</h2>
                   <p>{runError}</p>
-                  <p className="muted">Click the characters at home (marked !) to see what went wrong for each of them, then try again.</p>
+                  <p className="muted">Tap the people marked ! to see what went wrong, then try again.</p>
                 </div>
               </section>
             )}
           </div>
         </div>
       </main>
-      <footer className="g-wrap g-foot muted">Verdicts come from AI personas: a structured second opinion, not a guarantee.</footer>
+      <DraftDialog
+        open={draftOpen}
+        onClose={() => setDraftOpen(false)}
+        draft={draftIdea}
+        source={draftSource}
+        blocked={runBlocked}
+        onDone={(b, run) => {
+          setBrief(b);
+          setDraftOpen(false);
+          if (run) void submit(b);
+        }}
+      />
+      <footer className="g-wrap g-foot muted">These answers come from AI personas. Treat them as a second opinion, not a promise.</footer>
     </div>
   );
 }

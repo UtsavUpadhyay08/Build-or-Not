@@ -20,22 +20,22 @@ export function ProposalSummary({ brief, idea, meta, running, onReset }: Props) 
     const p = meta?.providers.find((x) => x.key === key) ?? idea?.sendPlan?.providers.find((x) => x.key === key);
     return p ? (p.name === "mock" ? p.model : `${p.name} · ${p.model}`) : key;
   };
-  const paidBy = !idea ? "" : idea.keyMode === "own" ? " (on your own key)" : idea.mock ? "" : " (free tier)";
+  const paidBy = !idea ? "" : idea.keyMode === "own" ? " (your key)" : idea.mock ? "" : " (free run)";
   const council = !idea
-    ? "Getting the council ready…"
+    ? "Getting ready…"
     : idea.panelMode === "mixed"
       ? `Mixed: ${providers ? providers.map(label).join(", ") : "all working models"}`
       : `One model: ${providers ? label(providers[0]) : "the default model"}`;
   const extras = [
     brief.targetAudience && ["For", brief.targetAudience],
     brief.pricingModel && ["Pricing", brief.pricingModel],
-    brief.competitors && ["Competes with", brief.competitors],
+    brief.competitors && ["Instead of", brief.competitors],
   ].filter(Boolean) as [string, string][];
 
   return (
     <section className="proposal proposal-compact" aria-labelledby="proposal-h">
       <div className="compact-top">
-        <div className="eyebrow">PROPOSAL{running ? " · SEALED" : ""}</div>
+        <div className="eyebrow">YOUR IDEA{running ? " · LOCKED" : ""}</div>
         <h2 id="proposal-h">{brief.title || "Untitled idea"}</h2>
       </div>
       <p className="compact-desc">{brief.description}</p>
@@ -65,7 +65,7 @@ export function ProposalSummary({ brief, idea, meta, running, onReset }: Props) 
         })}
       </div>
       <div className="compact-council">
-        <span className="eyebrow">THE COUNCIL</span>
+        <span className="eyebrow">AI USED</span>
         <span>
           {council}
           {paidBy}
@@ -76,7 +76,7 @@ export function ProposalSummary({ brief, idea, meta, running, onReset }: Props) 
           <span className="eyebrow">HOW IT WAS SENT</span>
           <span>{planFromServer(idea.sendPlan, idea.sendPlan.providers.reduce((s, p) => s + p.personas, 0) || 45)}</span>
           <details>
-            <summary>Per key</summary>
+            <summary>Details</summary>
             <ul>
               {idea.sendPlan.providers.map((p) => (
                 <li key={p.key}>
@@ -97,7 +97,7 @@ export function ProposalSummary({ brief, idea, meta, running, onReset }: Props) 
           Edit and ask again
         </button>
       ) : (
-        <p className="proposal-hint">Sealed while the council meets.</p>
+        <p className="proposal-hint">Locked while the council votes.</p>
       )}
     </section>
   );

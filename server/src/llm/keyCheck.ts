@@ -63,10 +63,16 @@ export function classify(name: string, status: number, body: string): HealthStat
 
 export function explain(cfg: Pick<ProviderConfig, "name" | "model" | "apiKey" | "fromSite">, status: HealthStatus, detail: string): string {
   const envVar = ENV_VAR[cfg.name] ?? `${cfg.name.toUpperCase()}_API_KEY`;
-  if (cfg.fromSite && status === "bad_key") {
+  if (cfg.fromSite) {
+    // A visitor's own key: plain words, nothing about .env or server settings.
+    const P = NICE[cfg.name] ?? cfg.name;
     const prefix = KEY_PREFIX[cfg.name];
-    const hint = prefix && cfg.apiKey && !cfg.apiKey.startsWith(prefix) ? ` ${cfg.name} keys normally start with "${prefix}".` : "";
-    return `${NICE[cfg.name] ?? cfg.name} rejected this key. It's wrong, revoked, or from another account. Copy it again, or create a new one.${hint}`;
+    const hint = prefix && cfg.apiKey && !cfg.apiKey.startsWith(prefix) ? ` ${P} keys start with "${prefix}".` : "";
+    if (status === "bad_key") return `${P} didn’t accept this key. Check you copied all of it, or make a new one.${hint}`;
+    if (status === "bad_model") return `Your key works, but ${P} has no model called "${cfg.model}". Try again and we’ll pick a current one.`;
+    if (status === "no_credit") return `Your ${P} key works, but the account has no credit. Add credit, or use a free key (Groq is free).`;
+    if (status === "quota") return `Your ${P} key has used up its free limit for today. It resets within 24 hours.`;
+    if (status === "unreachable") return `Couldn’t reach ${P} just now. Try again in a minute.`;
   }
   const modelVar = `${cfg.name.toUpperCase()}_MODEL`;
   switch (status) {

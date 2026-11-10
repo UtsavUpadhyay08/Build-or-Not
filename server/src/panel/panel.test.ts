@@ -131,7 +131,7 @@ describe("runPanel", () => {
     expect(s).toBeNull();
     const rec = await store.getIdea("idea1");
     expect(rec?.status).toBe("failed");
-    expect(rec?.error).toMatch(/quorum/);
+    expect(rec?.error).toMatch(/at least 80% need to/);
   });
 
   it("resumes: personas with a saved verdict are not called again", async () => {

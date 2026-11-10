@@ -19,7 +19,8 @@ process.env.MOCK_LATENCY_MS = "5";
 process.env.PANEL_QUORUM = "0.8";
 process.env.GROQ_BURST = "45"; // the fake Groq has no real limits; don't make the test wait on the documented 30/min
 process.env.MOCK_RPM = "60000";
-process.env.ADMIN_TOKEN = "test-admin-token-0123456789"; // several free runs share the simulated provider in this file
+process.env.ADMIN_TOKEN = "test-admin-token-0123456789";
+process.env.DRAFTS_PER_DAY = "3"; // several free runs share the simulated provider in this file
 process.env.API_REQUESTS_PER_MINUTE = "100000"; // the polling below would trip the normal 120/min limit
 
 const KEY_A = "gsk_visitorAAAA1111aaaa2222";
@@ -51,6 +52,11 @@ beforeAll(async () => {
       if (req.url?.endsWith("/models")) {
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ data: [{ id: "llama-3.3-70b-versatile" }] }));
+      }
+      if (body.includes("submit_draft") || body.includes("write up a product")) {
+        const draft = { title: "Dog walker finder", description: "Helps busy owners find a vetted walker nearby.", targetAudience: "Busy dog owners", pricingModel: "Commission", competitors: "Rover, Wag", sliders: { reach: 6, buildCost: 5, userImportance: 7, complexity: 6, value: 7, risk: 3 } };
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: JSON.stringify(draft) } }], usage: { prompt_tokens: 10, completion_tokens: 10 } }));
       }
       const synth = body.includes("topConcerns");
       const s = SCORE[key];
@@ -230,5 +236,35 @@ describe("visit stats: private to the owner, no personal data", () => {
     expect(s.totals.hitFreeLimit).toBeGreaterThanOrEqual(1); // the free-tier test above hit the cap
     expect(s.daily).toHaveLength(30);
     expect(JSON.stringify(s)).not.toContain("ownerHash");
+  });
+});
+
+describe("fill it in with AI", () => {
+  it("drafts a full brief from one sentence on the free tier, within a daily limit", async () => {
+    const ip = "203.0.113.200";
+    const res = await post("/api/ideas/draft", { idea: "an app that finds dog walkers near you" }, ip);
+    expect(res.status).toBe(200);
+    const { brief, simulated } = await res.json();
+    expect(simulated).toBe(true); // no site key in this test: simulated model
+    expect(brief.title.length).toBeGreaterThan(0);
+    expect(Object.keys(brief.sliders)).toHaveLength(6);
+    for (const v of Object.values(brief.sliders) as number[]) expect(v >= 1 && v <= 10).toBe(true);
+    await post("/api/ideas/draft", { idea: "second idea" }, ip);
+    await post("/api/ideas/draft", { idea: "third idea" }, ip);
+    expect((await post("/api/ideas/draft", { idea: "fourth idea" }, ip)).status).toBe(429);
+  });
+
+  it("uses the visitor's own key when they chose it, and never echoes it", async () => {
+    const before = seen.get(KEY_A) ?? 0;
+    const res = await post("/api/ideas/draft", { idea: "dog walkers on demand", keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_A }] }, "203.0.113.201");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(JSON.parse(body).brief.title).toBe("Dog walker finder");
+    expect(seen.get(KEY_A) ?? 0).toBeGreaterThan(before);
+    expect(body).not.toContain("visitorAAAA");
+  });
+
+  it("rejects an empty idea", async () => {
+    expect((await post("/api/ideas/draft", { idea: "  " }, "203.0.113.202")).status).toBe(400);
   });
 });

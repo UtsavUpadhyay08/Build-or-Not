@@ -30,7 +30,7 @@ export function ReviewPanel({ persona, index, verdict, failure, impact, onClose 
         <div className="review-title">
           <div className="review-name">{persona.name}</div>
           <div className="review-sub">
-            Lives in the {d.label} district · “{persona.tagline}”
+            {d.label} · “{persona.tagline}”
           </div>
         </div>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close review">
@@ -48,25 +48,25 @@ export function ReviewPanel({ persona, index, verdict, failure, impact, onClose 
           <span className="review-score">{verdict ? `Score ${verdict.score} / 10` : "No score"}</span>
         </div>
       )}
-      {!style && <p className="review-p">Still thinking. Their verdict will appear here the moment it arrives.</p>}
+      {!style && <p className="review-p">Still thinking. Their answer shows up here as soon as it’s in.</p>}
 
       {verdict && (
         <>
           <div>
-            <h3 className="kicker">IN THEIR WORDS</h3>
+            <h3 className="kicker">WHAT THEY SAID</h3>
             <p className="review-p">{verdict.reasoning}</p>
           </div>
           <div className="note note-concern">
-            <div className="note-k">TOP CONCERN</div>
+            <div className="note-k">BIGGEST WORRY</div>
             <div>{verdict.topConcern}</div>
           </div>
           <div className="note note-appeal">
-            <div className="note-k">TOP APPEAL</div>
+            <div className="note-k">WHAT THEY LIKED</div>
             <div>{verdict.topAppeal}</div>
           </div>
           <div className="review-meta">
             Answered by {providerLabel(verdict.provider)} · {verdict.model} in {(verdict.latencyMs / 1000).toFixed(1)}s · {(verdict.inputTokens + verdict.outputTokens).toLocaleString()} tokens
-            {verdict.repaired ? " · first answer was malformed, fixed on re-ask" : ""}
+            {verdict.repaired ? " · first answer was broken, asked again" : ""}
           </div>
         </>
       )}
@@ -74,7 +74,7 @@ export function ReviewPanel({ persona, index, verdict, failure, impact, onClose 
       {failure && story && (
         <>
           <div>
-            <h3 className="kicker kicker-indigo">WHY THEY WENT HOME</h3>
+            <h3 className="kicker kicker-indigo">WHY THEY DIDN’T VOTE</h3>
             <p className="review-p">{story.plain}</p>
           </div>
           <ol className="note note-steps">
@@ -83,7 +83,7 @@ export function ReviewPanel({ persona, index, verdict, failure, impact, onClose 
             ))}
           </ol>
           <div className="note note-impact">
-            <div className="note-k">DOES IT CHANGE THE RESULT?</div>
+            <div className="note-k">DOES THIS CHANGE THE RESULT?</div>
             <div>{impact}</div>
           </div>
           {story.fix && (
@@ -93,7 +93,7 @@ export function ReviewPanel({ persona, index, verdict, failure, impact, onClose 
             </div>
           )}
           <div className="review-meta">
-            Technical detail: {failure.provider} / {failure.model}
+            Details: {failure.provider} / {failure.model}
             {failure.status ? ` · HTTP ${failure.status}` : ""} · {failure.attempts ?? 1} attempt{(failure.attempts ?? 1) === 1 ? "" : "s"} · {failure.error.slice(0, 220)}
           </div>
         </>

@@ -11,6 +11,9 @@ users, and the people who'd have to build and support it. Each persona answers i
 independent** AI call, so nobody anchors on anyone else. You get a Build / Maybe / Don't build verdict,
 and more usefully, *who* disagreed and why.
 
+In a hurry? Click **Just type your idea**, write one sentence, and the AI fills in the whole brief
+(description, audience, pricing, competitors and the six idea stats) before the council runs.
+
 It's also an experiment. An eval mode runs the council over YC companies whose outcome is known and
 measures whether 45 independent judges actually predict better than a single prompt.
 

@@ -46,10 +46,10 @@ export const VSTYLE: Record<V, { label: string; bg: string; fg: string; bright: 
   b: { label: "BUILD", bg: "#DCF2E3", fg: "#14532D", bright: "#4ADE80", solid: "#22A05A" },
   m: { label: "MAYBE", bg: "#ECE8E2", fg: "#44403C", bright: "#D6D3D1", solid: "#A8A29E" },
   d: { label: "DON’T BUILD", bg: "#FDE1CF", fg: "#7C2D12", bright: "#FB923C", solid: "#F97316" },
-  f: { label: "WENT HOME", bg: "#E0E7FF", fg: "#3730A3", bright: "#A5B4FC", solid: "#818CF8" },
+  f: { label: "DIDN’T VOTE", bg: "#E0E7FF", fg: "#3730A3", bright: "#A5B4FC", solid: "#818CF8" },
 };
 
-export const VERDICT_WORD: Record<Verdict, string> = { build: "Build it", maybe: "Mixed verdict", dont_build: "Don’t build" };
+export const VERDICT_WORD: Record<Verdict, string> = { build: "Build it", maybe: "Maybe", dont_build: "Don’t build" };
 
 const PROVIDER_LABEL: Record<string, string> = { groq: "Groq", openrouter: "OpenRouter", opencode: "OpenCode", gemini: "Gemini", anthropic: "Anthropic", openai: "OpenAI", mock: "the simulated model" };
 export const providerLabel = (p: string) => PROVIDER_LABEL[p] ?? p;
@@ -73,79 +73,80 @@ export function explainFailure(f: PersonaFailure, name: string): FailureStory {
 function rawStory(f: PersonaFailure, name: string): FailureStory {
   const P = providerLabel(f.provider);
   const n = Math.max(1, f.attempts ?? 1);
-  const retried = n > 1 ? `Waited and retried ${n - 1} more time${n - 1 === 1 ? "" : "s"}, with growing pauses: no luck.` : "Not retried: trying again straight away would fail the same way.";
-  const leave = "Walked home, so the rest of the council wasn’t held up and the empty seat stays visible.";
+  const tries = `${n} ${n === 1 ? "try" : "tries"}`;
+  const retried = n > 1 ? `Waited and tried again ${n - 1} more time${n - 1 === 1 ? "" : "s"}. Still no answer.` : "Didn’t try again: it would have failed the same way.";
+  const leave = "Went home, so the others weren’t kept waiting.";
   const kind: FailureKind = f.kind ?? "unknown";
   switch (kind) {
     case "rate_limit":
       return {
-        short: `${P}’s per-minute limit was hit on their turn; ${n} attempt${n === 1 ? "" : "s"} failed.`,
-        plain: `${name} never got to answer. ${P} limits how much it will process per minute, and the council hit that limit just as their turn came.`,
-        steps: [`Asked ${P} for a verdict: refused, too many requests (HTTP 429).`, retried, leave],
-        fix: "Ask again in a minute, lower the requests-per-minute setting, or add a second provider so others can take over.",
+        short: `${P} was busy (too many requests). Failed after ${tries}.`,
+        plain: `${name} didn’t get to answer. ${P} only takes so many requests a minute, and the limit was hit on their turn.`,
+        steps: [`Asked ${P}. It said “too many requests”.`, retried, leave],
+        fix: "Wait a minute and ask again, or use a second AI model so others can take over.",
       };
     case "daily_quota":
       return {
-        short: `${P}’s free daily allowance ran out.`,
-        plain: `${P}’s free plan has a daily cap, and it was used up before ${name} could answer. It resets within 24 hours.`,
-        steps: [`Asked ${P} for a verdict: refused, daily limit reached.`, "Not retried: waiting a few seconds can’t fix a daily cap.", leave],
-        fix: "Try again tomorrow, or add another free provider so it can take over.",
+        short: `${P}’s free limit for today ran out.`,
+        plain: `${P}’s free plan has a daily limit, and it ran out before ${name} could answer. It resets within 24 hours.`,
+        steps: [`Asked ${P}. It said the daily limit was used up.`, "Didn’t try again: waiting a few seconds won’t help.", leave],
+        fix: "Try again tomorrow, or use another free AI model.",
       };
     case "timeout":
     case "network":
       return {
-        short: kind === "timeout" ? `${P} didn’t reply in time; ${n} attempt${n === 1 ? "" : "s"} failed.` : `Couldn’t reach ${P}; ${n} attempt${n === 1 ? "" : "s"} failed.`,
-        plain: kind === "timeout" ? `${P} was too slow to answer for ${name} (over 60 seconds), probably because it was busy.` : `The connection to ${P} failed while asking ${name}.`,
-        steps: [kind === "timeout" ? `Asked ${P} for a verdict: no reply within 60 seconds.` : `Asked ${P} for a verdict: the connection failed.`, retried, leave],
-        fix: "Usually temporary. Asking again later normally works.",
+        short: kind === "timeout" ? `${P} took too long to reply. Failed after ${tries}.` : `Couldn’t reach ${P}. Failed after ${tries}.`,
+        plain: kind === "timeout" ? `${P} took more than 60 seconds to answer for ${name}. It was probably busy.` : `The connection to ${P} dropped while asking ${name}.`,
+        steps: [kind === "timeout" ? `Asked ${P}. No reply after 60 seconds.` : `Asked ${P}. The connection failed.`, retried, leave],
+        fix: "This is usually temporary. Asking again later normally works.",
       };
     case "server_error":
       return {
-        short: `${P} had a server error; ${n} attempt${n === 1 ? "" : "s"} failed.`,
-        plain: `${P} itself had a problem (HTTP ${f.status ?? "5xx"}) while ${name} was answering. That’s on their side, not yours.`,
-        steps: [`Asked ${P} for a verdict: server error (HTTP ${f.status ?? "5xx"}).`, retried, leave],
-        fix: "Usually temporary. Asking again later normally works.",
+        short: `${P} had a problem on its side. Failed after ${tries}.`,
+        plain: `${P} had an error of its own (code ${f.status ?? "5xx"}) while ${name} was answering. Nothing you did caused it.`,
+        steps: [`Asked ${P}. It replied with an error (code ${f.status ?? "5xx"}).`, retried, leave],
+        fix: "This is usually temporary. Asking again later normally works.",
       };
     case "bad_key":
       return {
-        short: `${P} rejected the API key.`,
-        plain: `${P} refused the API key, so ${name} (and anyone else on ${P}) couldn’t be asked.`,
-        steps: [`Asked ${P} for a verdict: key rejected.`, `${P} was switched off for the rest of this run, so no more calls were wasted on it.`, leave],
-        fix: `Create a new ${P} key, put it in .env and restart the server.`,
+        short: `${P} didn’t accept the API key.`,
+        plain: `${P} said the API key isn’t valid, so ${name} couldn’t be asked.`,
+        steps: [`Asked ${P}. The key was refused.`, `Stopped using ${P} for this run, so no more questions were wasted.`, leave],
+        fix: `Check the ${P} key, or make a new one.`,
       };
     case "no_credit":
       return {
-        short: `The ${P} account has no credit.`,
-        plain: `The ${P} key is valid, but the account has no credit left, so ${P} refused to answer for ${name}.`,
-        steps: [`Asked ${P} for a verdict: refused, no credit.`, `${P} was switched off for the rest of this run.`, leave],
-        fix: `Add billing to ${P}, or use a free provider.`,
+        short: `The ${P} account has no credit left.`,
+        plain: `The ${P} key works, but the account has no credit, so ${P} wouldn’t answer for ${name}.`,
+        steps: [`Asked ${P}. It said there’s no credit.`, `Stopped using ${P} for this run.`, leave],
+        fix: `Add credit to your ${P} account, or use a free AI model.`,
       };
     case "bad_model":
       return {
         short: `${P} doesn’t have the model “${f.model}”.`,
-        plain: `The model name configured for ${P} doesn’t exist (it may have been retired), so ${name} couldn’t be asked.`,
-        steps: [`Asked ${P}’s “${f.model}” for a verdict: model not found.`, `${P} was switched off for the rest of this run.`, leave],
-        fix: "Clear the model setting in .env so the server picks a current one.",
+        plain: `The AI model “${f.model}” doesn’t exist on ${P} any more, so ${name} couldn’t be asked.`,
+        steps: [`Asked ${P} for “${f.model}”. That model wasn’t found.`, `Stopped using ${P} for this run.`, leave],
+        fix: "Pick a different model, or leave the model setting empty so a current one is chosen.",
       };
     case "bad_output":
       return {
-        short: "Their answer came back garbled twice.",
-        plain: `${name} did answer, but not in the format the panel needs (for example, a missing score or an invalid verdict).`,
-        steps: ["Got an answer, but it didn’t match the required format.", "Asked again, quoting exactly what was wrong: still invalid.", "Walked home rather than guess what they meant."],
-        fix: "Rare with good models. A different model or provider usually fixes it.",
+        short: "Their answer came back broken, twice.",
+        plain: `${name} did answer, but the answer was missing parts we need (like a score).`,
+        steps: ["Got an answer, but parts were missing or wrong.", "Asked again and pointed out what was wrong. Still broken.", "Went home rather than guess what they meant."],
+        fix: "This is rare. Trying a different AI model usually fixes it.",
       };
     case "cooling":
       return {
-        short: `${P} was paused after repeated failures.`,
-        plain: `${P} failed several personas in a row, so it was paused for a few minutes. No other provider on this council was free to take ${name}’s turn.`,
-        steps: [`${P} had already failed 3 personas in a row.`, "It was paused for a few minutes to stop wasting calls.", leave],
-        fix: "Add a second provider to the council so paused providers have a backup.",
+        short: `${P} was paused after failing several times in a row.`,
+        plain: `${P} failed 3 personas in a row, so it was paused for a few minutes. No other AI model was free to take ${name}’s turn.`,
+        steps: [`${P} had already failed 3 personas in a row.`, "It was paused for a few minutes so no more questions were wasted.", leave],
+        fix: "Use a second AI model, so there’s a backup when one is paused.",
       };
     default:
       return {
-        short: "Their call failed.",
-        plain: `Something went wrong asking ${name}: ${f.error.slice(0, 160)}`,
-        steps: [`Asked ${P} for a verdict: it failed.`, leave],
+        short: "Their question failed.",
+        plain: `Something went wrong while asking ${name}: ${f.error.slice(0, 160)}`,
+        steps: [`Asked ${P}. It failed.`, leave],
       };
   }
 }
@@ -169,9 +170,9 @@ export function formatWait(sec: number): string {
 
 /** "6 at once, then 6 a minute · 999 left today" */
 export function capacityLine(c: Capacity): string {
-  const head = c.now < c.burst ? `${c.now} at once right now (${c.burst} on a fresh minute)` : `${c.burst} at once`;
+  const head = c.now < c.burst ? `${c.now} questions at once right now (usually ${c.burst})` : `${c.burst} questions at once`;
   const rate = c.burst >= 45 ? "" : `, then ${c.perMinute} a minute`;
-  const daily = c.dailyLeft !== null ? ` · ${c.dailyLeft.toLocaleString("en-US")} left today` : "";
+  const daily = c.dailyLeft !== null ? ` · ${c.dailyLeft.toLocaleString("en-US")} requests left today` : "";
   return `${head}${rate}${daily}`;
 }
 
@@ -199,8 +200,8 @@ export function previewPlan(meta: ApiMeta | null, keys: string[], total = 45): {
 
 export function planSentence(startNow: number, total: number, allSentSec: number): string {
   if (startNow >= total) return `All ${total} questions go out at once.`;
-  if (startNow === 0) return `These keys are at their limit right now; questions start as they free up and all ${total} are sent ${formatWait(allSentSec)}.`;
-  return `${startNow} questions go out at once; the other ${total - startNow} follow as the keys allow, all sent ${formatWait(allSentSec)}.`;
+  if (startNow === 0) return `The AI is at its limit right now. Questions start as soon as it frees up, and all ${total} are sent ${formatWait(allSentSec)}.`;
+  return `${startNow} questions go out now. The other ${total - startNow} follow as fast as the AI allows: all sent ${formatWait(allSentSec)}.`;
 }
 
 export function planFromServer(plan: SendPlan, total = 45): string {

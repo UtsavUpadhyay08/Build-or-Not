@@ -23,7 +23,7 @@ export const ownKeySchema = z.object({
 export function keysRouter(): Router {
   const r = Router();
 
-  r.use((_req, res, next) => (config.allowOwnKeys ? next() : res.status(403).json({ error: "Using your own key is switched off on this site." })));
+  r.use((_req, res, next) => (config.allowOwnKeys ? next() : res.status(403).json({ error: "This site doesn’t allow your own key." })));
 
   r.post(
     "/check",
@@ -32,13 +32,13 @@ export function keysRouter(): Router {
       limit: config.limits.keyChecksPerHour,
       standardHeaders: "draft-7",
       legacyHeaders: false,
-      message: { error: `That's ${config.limits.keyChecksPerHour} key checks in an hour. Try again later.` },
+      message: { error: `You’ve checked ${config.limits.keyChecksPerHour} keys in the last hour. Try again later.` },
     }),
     ah(async (req, res) => {
       const parsed = ownKeySchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid key" });
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "That doesn’t look like an API key." });
       const { providers, problems } = await privateCouncil([parsed.data]);
-      if (!providers.length) return res.status(400).json({ error: problems[0]?.message ?? "That key didn't work." });
+      if (!providers.length) return res.status(400).json({ error: problems[0]?.message ?? "That key didn’t work." });
       const p = providers[0];
       const capacity = await measureProvider(p);
       res.json({ ok: true, provider: p.name, model: p.model, capacity: { ...capacity, detail: redactSecrets(capacity.detail, [parsed.data.apiKey]) } });

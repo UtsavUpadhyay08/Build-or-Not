@@ -68,7 +68,7 @@ export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys
   const simulated = site?.kind === "sim" || meta?.mock;
   const siteModels = meta?.providers.filter((p) => p.usable).map((p) => (p.name === "mock" ? p.model : `${providerLabel(p.name)} · ${p.model}`)) ?? [];
   const spec = KEY_PROVIDERS.find((p) => p.id === provider)!;
-  const prefixWarn = spec.prefix && key.trim() && !key.trim().startsWith(spec.prefix) ? `${spec.label} keys usually start with “${spec.prefix}”.` : null;
+  const prefixWarn = spec.prefix && key.trim() && !key.trim().startsWith(spec.prefix) ? `${spec.label} keys usually start with “${spec.prefix}”. Check you copied the whole key.` : null;
   const resets = quota ? new Date(quota.resetsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
 
   async function add() {
@@ -82,7 +82,7 @@ export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys
       onOwnKeys(next, entry.provider);
       saveRemembered(remember ? next : []);
       setKey("");
-      setOk(`${spec.label} key works (${res.model}). It can take ${capacityLine(res.capacity)}.`);
+      setOk(`Your ${spec.label} key works. It can take ${capacityLine(res.capacity)}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -109,16 +109,16 @@ export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys
       <label className={`radio-row run-opt ${keyMode === "free" ? "on" : ""}`}>
         <input type="radio" name="key-mode" checked={keyMode === "free"} disabled={locked} onChange={() => onKeyMode("free")} />
         <span>
-          <strong>{simulated ? "Try it free (simulated models)" : "Use the free tier"}</strong>
+          <strong>{simulated ? "Try it free (simulated AI)" : "Use a free run"}</strong>
           {site ? (
             <span className={`runs-left ${site.left === 0 ? "none" : ""}`}>
-              {site.left} of {site.limit} runs left today
+              {site.left} of {site.limit} free runs left today
             </span>
           ) : null}
           <span className="run-sub">
             {simulated
-              ? "The site has no AI key of its own, so the council runs on simulated models. Good for seeing how it works; the verdicts aren't real."
-              : `Runs on the site's ${siteModels.join(", ") || "AI key"}. Each visitor gets ${site?.limit ?? 3} runs a day${resets ? `; more after ${resets}` : ""}.`}
+              ? "This site has no AI key, so the answers are made up. Good for seeing how it works, not for real advice."
+              : `Uses this site’s AI (${siteModels.join(", ") || "Groq"}). You get ${site?.limit ?? 3} free runs a day${resets ? `, and more after ${resets}` : ""}.`}
           </span>
         </span>
       </label>
@@ -128,7 +128,7 @@ export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys
           <input type="radio" name="key-mode" checked={keyMode === "own"} disabled={locked} onChange={() => onKeyMode("own")} />
           <span>
             <strong>Use my own API key</strong>
-            <span className="run-sub">Real models, on your own quota. Your key is only ever used for your runs, and never stored on the server.</span>
+            <span className="run-sub">No daily limit from us. Your key is used only for your own runs and is never saved on our server.</span>
           </span>
         </label>
       )}
@@ -147,7 +147,7 @@ export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys
                   <div className="key-cap">
                     <span className="key-cap-main">Sends {capacityLine(k.capacity)}</span>
                     <details>
-                      <summary>How this was worked out</summary>
+                      <summary>How we worked this out</summary>
                       <p>{k.capacity.detail}</p>
                     </details>
                   </div>
@@ -195,15 +195,15 @@ export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys
                   <span>Remember on this device</span>
                 </label>
                 <a className="key-where" href={spec.url} target="_blank" rel="noreferrer noopener">
-                  Get a key: {spec.where}
+                  Get a free key: {spec.where}
                 </a>
               </div>
               {prefixWarn && <span className="warn-text">{prefixWarn}</span>}
               <button type="button" className="parch-btn key-check" disabled={!key.trim() || busy} onClick={add}>
-                {busy ? "Checking the key and measuring its limits…" : ownKeys.length ? "Add another key" : "Check key and measure its limits"}
+                {busy ? "Checking your key…" : ownKeys.length ? "Add another key" : "Check my key"}
               </button>
               <p className="key-note">
-                One tiny request reads your key's rate limits, so the council can send as many questions at once as it allows. The key stays in this tab (and in this browser only if you tick “Remember”). The server uses it for your run and then forgets it. Don't tick “Remember” on a shared computer.
+                We send one tiny test request to see how many questions your key allows at once. Your key stays in this tab (and in this browser only if you tick “Remember”). Our server uses it for your run, then forgets it. Don’t tick “Remember” on a shared computer.
               </p>
             </div>
           )}

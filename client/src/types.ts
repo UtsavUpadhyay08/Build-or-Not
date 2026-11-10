@@ -14,12 +14,12 @@ export interface IdeaSliders {
 }
 
 export const SLIDER_FIELDS: { key: keyof IdeaSliders; label: string; low: string; high: string }[] = [
-  { key: "reach", label: "Reach", low: "Few users would use it", high: "Most users would use it" },
-  { key: "buildCost", label: "Build cost", low: "Quick and cheap", high: "Slow and expensive" },
-  { key: "userImportance", label: "User importance", low: "Peripheral users", high: "Our most important users" },
-  { key: "complexity", label: "Complexity", low: "Simple to operate/support", high: "Operationally complex" },
-  { key: "value", label: "Value to users", low: "Nice to have", high: "Solves a real pain" },
-  { key: "risk", label: "Technical risk", low: "Isolated, low risk", high: "Could destabilize the product" },
+  { key: "reach", label: "How many would use it", low: "Very few", high: "Almost everyone" },
+  { key: "buildCost", label: "Cost to build", low: "Quick and cheap", high: "Slow and costly" },
+  { key: "userImportance", label: "How important these users are", low: "Minor users", high: "Your most important users" },
+  { key: "complexity", label: "Effort to keep it running", low: "Easy", high: "Hard" },
+  { key: "value", label: "How much it helps", low: "Nice to have", high: "Fixes a real pain" },
+  { key: "risk", label: "Risk it won’t work", low: "Low", high: "High" },
 ];
 
 export interface IdeaBrief {

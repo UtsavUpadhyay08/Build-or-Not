@@ -18,7 +18,7 @@ export function visitorId(req: Request): string {
   return createHmac("sha256", config.ipHashSecret || "build-or-not/visitor").update(ip).digest("base64url").slice(0, 32);
 }
 
-export type QuotaKind = "free" | "sim" | "own";
+export type QuotaKind = "free" | "sim" | "own" | "draft";
 
 export function today() {
   const now = new Date();
@@ -31,7 +31,7 @@ export function today() {
 export const freeKind = (): QuotaKind => (MOCK_MODE ? "sim" : "free");
 
 export function limitFor(kind: QuotaKind): number {
-  return kind === "free" ? config.limits.freeRunsPerDay : kind === "sim" ? config.limits.simRunsPerDay : config.limits.ownRunsPerDay;
+  return kind === "free" ? config.limits.freeRunsPerDay : kind === "sim" ? config.limits.simRunsPerDay : kind === "draft" ? config.limits.draftsPerDay : config.limits.ownRunsPerDay;
 }
 
 export function quotaBucket(kind: QuotaKind, req: Request) {

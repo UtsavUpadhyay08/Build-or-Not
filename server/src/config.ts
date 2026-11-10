@@ -152,6 +152,8 @@ export const config = {
     simRunsPerDay: Math.max(0, Math.floor(num("SIM_RUNS_PER_DAY", 20))),
     /** Runs a visitor may start with their own key (their quota, but our server's time). */
     ownRunsPerDay: Math.max(0, Math.floor(num("OWN_RUNS_PER_DAY", 20))),
+    /** "Fill it in with AI" drafts per visitor per day (one small call each). */
+    draftsPerDay: Math.max(0, Math.floor(num("DRAFTS_PER_DAY", 10))),
     /** Key checks per visitor per hour, so the site can't be used to test stolen keys in bulk. */
     keyChecksPerHour: Math.max(1, Math.floor(num("KEY_CHECKS_PER_HOUR", 10))),
     /** All API requests per visitor per minute. */

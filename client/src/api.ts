@@ -20,6 +20,9 @@ export const api = {
   submitIdea: (brief: IdeaBrief & { panelMode?: PanelMode; providers?: string[]; keyMode?: "free" | "own"; ownKeys?: { provider: string; apiKey: string; model?: string }[] }) =>
     request<{ id: string; mock: boolean; totalPersonas: number; sendPlan: SendPlan; ownerToken: string; quota: Quota }>("/ideas", { method: "POST", body: JSON.stringify(brief) }),
   getQuota: () => request<Quota>("/ideas/quota"),
+  /** "Fill it in with AI": a sentence or two in, a complete brief out. */
+  draftIdea: (body: { idea: string; keyMode: "free" | "own"; ownKeys?: { provider: string; apiKey: string; model?: string }[] }) =>
+    request<{ brief: IdeaBrief; model: string; simulated: boolean }>("/ideas/draft", { method: "POST", body: JSON.stringify(body) }),
   /** Owner-only numbers, unlocked with ADMIN_TOKEN. */
   getStats: (token: string, days = 30) => request<SiteStats>(`/admin/stats?days=${days}`, { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }),
   /** Check a visitor's own key and measure its limits. The server keeps nothing. */

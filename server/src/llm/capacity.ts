@@ -134,18 +134,18 @@ export function planCapacity(name: string, info: RateInfo, o: PlanOptions): Capa
 
   const parts: string[] = [];
   if (o.source === "forced") parts.push(`Sending all ${burst} at once (PANEL_ALL_AT_ONCE=true), whatever ${P}'s limits say.`);
-  if (o.source === "simulated") parts.push(`Simulated provider: ${perMinute} calls a minute.`);
+  if (o.source === "simulated") parts.push(`Simulated AI: ${perMinute} questions a minute.`);
   if (info.tpmLimit !== undefined) {
-    parts.push(`${P} allows ${fmt(info.tpmLimit)} tokens a minute; at about ${fmt(per)} tokens per persona that's ${byTokens} call${byTokens === 1 ? "" : "s"} a minute.`);
+    parts.push(`${P} lets this key use ${fmt(info.tpmLimit)} tokens a minute. Each persona’s question uses about ${fmt(per)}, so that’s ${byTokens} question${byTokens === 1 ? "" : "s"} a minute.`);
   }
   if (info.rpmLimit !== undefined) parts.push(`${P} allows ${fmt(info.rpmLimit)} requests a minute.`);
-  else if (documented && source !== "simulated") parts.push(`${P} doesn't report its per-minute request cap; its documented ${documented} a minute is assumed.`);
+  else if (documented && source !== "simulated") parts.push(`${P} doesn’t say how many requests a minute it allows, so we use its published limit of ${documented}.`);
   if (o.rpmSetting) parts.push(`Capped at ${o.rpmSetting} a minute by ${name.toUpperCase()}_RPM.`);
   if (o.burstPin) parts.push(`Burst pinned to ${o.burstPin} by ${name.toUpperCase()}_BURST.`);
-  if (now === 0) parts.push(info.retryAfterSec ? `It's at its limit right now (free again in ${info.retryAfterSec}s).` : "It's at its limit right now; calls start as it frees up.");
-  else if (now < burst) parts.push(`Some of this minute is used up, so ${now} can start immediately.`);
+  if (now === 0) parts.push(info.retryAfterSec ? `It’s at its limit right now (free again in ${info.retryAfterSec} seconds).` : "It’s at its limit right now. Questions start as soon as it frees up.");
+  else if (now < burst) parts.push(`Part of this minute is already used, so ${now} can start right away.`);
   if (info.rpdRemaining !== undefined) parts.push(`${fmt(info.rpdRemaining)} requests left today.`);
-  if (!parts.length) parts.push(`${P} doesn't report its limits; using ${perMinute} a minute (${name.toUpperCase()}_RPM).`);
+  if (!parts.length) parts.push(`${P} doesn’t share its limits, so we send ${perMinute} a minute.`);
 
   return {
     now,
@@ -191,7 +191,7 @@ export function buildSendPlan(mode: SendPlan["mode"], items: { key: string; name
     // After the first wave, the bucket refills at perMinute; anything beyond burst-per-minute queues.
     const startAllSec = left <= 0 ? 0 : Math.ceil((left / cap.perMinute) * 60);
     if (cap.dailyLeft !== null && cap.dailyLeft < rest.personas) {
-      warnings.push(`${LABEL[rest.name] ?? rest.name} has only ${cap.dailyLeft} requests left today for ${rest.personas} personas; the rest will go home.`);
+      warnings.push(`${LABEL[rest.name] ?? rest.name} has only ${cap.dailyLeft} requests left today for ${rest.personas} personas. The rest won’t get to vote.`);
     }
     return { ...rest, ...cap, startAllSec };
   });

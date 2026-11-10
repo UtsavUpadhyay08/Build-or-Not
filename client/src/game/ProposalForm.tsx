@@ -25,18 +25,20 @@ interface Props {
   keysSlot?: ReactNode;
   /** Why the council can't be summoned right now (no runs left, no key yet), if it can't. */
   blocked?: string | null;
+  /** Open the "just type your idea" popup. */
+  onQuickStart?: () => void;
 }
 
 const SHORT_SLIDERS: Record<keyof IdeaSliders, [string, string]> = {
-  reach: ["Few users", "Most users"],
-  buildCost: ["Quick and cheap", "Slow and pricey"],
-  userImportance: ["Peripheral users", "Our key users"],
-  complexity: ["Simple to run", "Hard to run"],
-  value: ["Nice to have", "Solves real pain"],
-  risk: ["Low risk", "Could break things"],
+  reach: ["Very few", "Almost everyone"],
+  buildCost: ["Quick and cheap", "Slow and costly"],
+  userImportance: ["Minor users", "Your best users"],
+  complexity: ["Easy", "Hard"],
+  value: ["Nice to have", "Fixes a real pain"],
+  risk: ["Low", "High"],
 };
 
-export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked, submitting, submitLabel, onSubmit, onReset, error, keysSlot, blocked }: Props) {
+export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked, submitting, submitLabel, onSubmit, onReset, error, keysSlot, blocked, onQuickStart }: Props) {
   const set = <K extends keyof IdeaBrief>(k: K, v: IdeaBrief[K]) => onBrief({ ...brief, [k]: v });
   const usable = meta?.providers.filter((p) => p.usable) ?? [];
   const unusable = meta?.providers.filter((p) => !p.usable) ?? [];
@@ -50,10 +52,21 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
   return (
     <section className="proposal" aria-labelledby="proposal-h">
       <div>
-        <div className="eyebrow">PROPOSAL</div>
-        <h2 id="proposal-h">What should the village judge?</h2>
-        <p className="proposal-hint">{locked ? "Sealed while the council meets." : "Every field is read by all 45 personas."}</p>
+        <div className="eyebrow">YOUR IDEA</div>
+        <h2 id="proposal-h">What do you want to build?</h2>
+        <p className="proposal-hint">{locked ? "Locked while the council votes." : "All 45 personas read everything you write here."}</p>
       </div>
+
+      {onQuickStart && !locked && (
+        <button type="button" className="quick-start" onClick={onQuickStart}>
+          <span aria-hidden="true" className="quick-spark">✦</span>
+          <span>
+            <strong>Just type your idea</strong>
+            <span>Write one sentence. AI fills in the rest and asks the council.</span>
+          </span>
+          <span aria-hidden="true" className="quick-arrow">→</span>
+        </button>
+      )}
 
       <label className="field-label">
         Title
@@ -61,25 +74,25 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
       </label>
       <label className="field-label">
         What is it, and what problem does it solve?
-        <textarea className="field" rows={4} value={brief.description} disabled={locked} maxLength={4000} onChange={(e) => set("description", e.target.value)} placeholder="Describe the idea in a few sentences." />
+        <textarea className="field" rows={4} value={brief.description} disabled={locked} maxLength={4000} onChange={(e) => set("description", e.target.value)} placeholder="Explain it in 2 or 3 sentences." />
       </label>
       <div className="field-row">
         <label className="field-label">
-          Target audience
-          <input className="field" type="text" value={brief.targetAudience} disabled={locked} onChange={(e) => set("targetAudience", e.target.value)} placeholder="Who is it for?" />
+          Who is it for?
+          <input className="field" type="text" value={brief.targetAudience} disabled={locked} onChange={(e) => set("targetAudience", e.target.value)} placeholder="e.g. students sharing a flat" />
         </label>
         <label className="field-label">
-          Pricing model
-          <input className="field" type="text" value={brief.pricingModel} disabled={locked} onChange={(e) => set("pricingModel", e.target.value)} placeholder="Free, subscription…" />
+          How will it make money?
+          <input className="field" type="text" value={brief.pricingModel} disabled={locked} onChange={(e) => set("pricingModel", e.target.value)} placeholder="e.g. free, ₹99/month" />
         </label>
       </div>
       <label className="field-label">
-        Competitors / what people use today
-        <input className="field" type="text" value={brief.competitors} disabled={locked} onChange={(e) => set("competitors", e.target.value)} placeholder="What do people use instead?" />
+        What do people use today instead?
+        <input className="field" type="text" value={brief.competitors} disabled={locked} onChange={(e) => set("competitors", e.target.value)} placeholder="e.g. Splitwise, spreadsheets" />
       </label>
 
       <fieldset className="parch-set">
-        <legend>IDEA STATS</legend>
+        <legend>RATE YOUR IDEA</legend>
         {SLIDER_FIELDS.map((f) => {
           const value = brief.sliders[f.key];
           return (
@@ -105,11 +118,11 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
       {keysSlot}
 
       <fieldset className="parch-set">
-        <legend>THE COUNCIL</legend>
+        <legend>WHICH AI ANSWERS</legend>
         <label className="radio-row">
           <input type="radio" name="council-mode" checked={council.mode === "single"} disabled={locked} onChange={() => onCouncil({ ...council, mode: "single" })} />
           <span>
-            <strong>One model</strong> for all 45 personas
+            <strong>One AI model</strong> for everyone
           </span>
         </label>
         {council.mode === "single" && (
@@ -124,7 +137,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
         <label className={`radio-row ${mixedOk ? "" : "muted"}`}>
           <input type="radio" name="council-mode" checked={council.mode === "mixed"} disabled={locked || !mixedOk} onChange={() => onCouncil({ ...council, mode: "mixed", mixed: council.mixed.length >= 2 ? council.mixed : usable.map((p) => p.key) })} />
           <span>
-            <strong>Mixed models</strong>: personas are shared out evenly across the models you tick{mixedOk ? "" : " (needs 2+ working providers)"}
+            <strong>Mix models</strong>: split the 45 personas between the models you tick{mixedOk ? "" : " (needs 2 or more working models)"}
           </span>
         </label>
         {council.mode === "mixed" && (
@@ -138,7 +151,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
                 </label>
               );
             })}
-            {council.mixed.length < 2 && <span className="warn-text">Tick at least two models.</span>}
+            {council.mixed.length < 2 && <span className="warn-text">Tick at least 2 models.</span>}
           </div>
         )}
         {preview && (
@@ -148,7 +161,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
         )}
         {unusable.length > 0 && (
           <details className="off-list">
-            <summary>{unusable.length} provider{unusable.length === 1 ? " is" : "s are"} switched off</summary>
+            <summary>{unusable.length} model{unusable.length === 1 ? " isn’t" : "s aren’t"} working</summary>
             {unusable.map((p) => (
               <div key={p.key} className="off-row">
                 <strong>{label(p)}</strong>: {p.reason ?? "unavailable"}
@@ -173,7 +186,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
       </button>
       {onReset && (
         <button type="button" className="parch-btn" onClick={onReset}>
-          Edit the proposal and send everyone home
+          Change the idea and start over
         </button>
       )}
     </section>

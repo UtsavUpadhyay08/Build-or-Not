@@ -50,21 +50,21 @@ function HistoryList() {
   }
 
   if (error) return <div className="error-box">{error}</div>;
-  if (items === null) return <p className="muted">Loading past proposals…</p>;
+  if (items === null) return <p className="muted">Loading…</p>;
   if (items.length === 0)
     return (
       <div className="card">
-        <h2>No proposals yet</h2>
+        <h2>No ideas yet</h2>
         <p className="muted">
-          Nobody has asked the council anything yet. <Link to="/">Be the first →</Link>
+          Nobody has asked about an idea yet. <Link to="/">Be the first →</Link>
         </p>
       </div>
     );
 
   return (
     <div className="card">
-      <h2>Past proposals</h2>
-      <p className="muted">Every idea anyone has put to the council. Click one to see its full results. You can delete only the ones you submitted.</p>
+      <h2>All ideas</h2>
+      <p className="muted">Every idea people have asked about. Click one to see its result. You can only delete your own.</p>
       <div className="table-scroll">
       <table className="history-table">
         <thead>
@@ -82,7 +82,7 @@ function HistoryList() {
             <tr key={idea.id}>
               <td>
                 <Link to={`/ideas/${idea.id}`}>{idea.title}</Link>
-                {idea.mock && <span className="mock-tag">mock</span>}
+                {idea.mock && <span className="mock-tag">simulated</span>}
                 {idea.panelMode === "mixed" && <span className="mock-tag">mixed</span>}
                 {ownerTokenFor(idea.id) && <span className="mock-tag">yours</span>}
               </td>

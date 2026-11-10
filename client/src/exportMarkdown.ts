@@ -1,6 +1,6 @@
 import type { IdeaRecord, PersonaFailure, PersonaVerdict, Synthesis } from "./types";
 
-const VERDICT_LABEL: Record<string, string> = { build: "Build it", maybe: "Mixed signals", dont_build: "Don't build it" };
+const VERDICT_LABEL: Record<string, string> = { build: "Build it", maybe: "Maybe", dont_build: "Don’t build it" };
 
 export function ideaToMarkdown(idea: IdeaRecord, verdicts: PersonaVerdict[], failures: PersonaFailure[], synthesis: Synthesis | null, personaName: (id: string) => string): string {
   const lines: string[] = [];
@@ -13,10 +13,10 @@ export function ideaToMarkdown(idea: IdeaRecord, verdicts: PersonaVerdict[], fai
     lines.push("");
     lines.push(synthesis.summary);
     lines.push("");
-    lines.push(`Build: ${synthesis.counts.build} · Mixed: ${synthesis.counts.maybe} · Don't build: ${synthesis.counts.dont_build} (of ${verdicts.length})`);
+    lines.push(`Build: ${synthesis.counts.build} · Maybe: ${synthesis.counts.maybe} · Don't build: ${synthesis.counts.dont_build} (of ${verdicts.length})`);
     lines.push("");
     const d = synthesis.disagreement;
-    lines.push(`**Panel agreement: ${d.confidence}** — score SD ${d.scoreStdDev}, verdict entropy ${d.verdictEntropy}, ${Math.round(d.agreement * 100)}% gave the most common verdict. ${synthesis.judged} responded, ${synthesis.failed} failed.`);
+    lines.push(`**Agreement: ${d.confidence}.** ${Math.round(d.agreement * 100)}% gave the most common answer. Score spread ${d.scoreStdDev}, vote split ${d.verdictEntropy} (0 = all agree, 1 = split three ways). ${synthesis.judged} answered, ${synthesis.failed} didn't.`);
     lines.push("");
     lines.push("| Persona group | Mean score | n |", "|---|---|---|");
     for (const g of d.byCategory) lines.push(`| ${g.key} | ${g.meanScore} | ${g.n} |`);

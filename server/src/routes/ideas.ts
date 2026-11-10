@@ -11,7 +11,9 @@ import type { Store } from "../store/store.js";
 import { publicIdea, type IdeaFullState, type IdeaRecord } from "../types.js";
 import { existingEmitter, type ProgressEvent } from "../panel/runPanel.js";
 import { isRunning, prepareRun, startPanel } from "../panel/service.js";
-import { hasUsableProvider, panelProviders, privateCouncil, providerHealth, providerKey } from "../llm/registry.js";
+import { hasUsableProvider, panelProviders, primaryProvider, privateCouncil, providerHealth, providerKey } from "../llm/registry.js";
+import { callStructured } from "../llm/structured.js";
+import { DRAFT_SCHEMA, DRAFT_SYSTEM, draftZ } from "../panel/draft.js";
 
 const slider = z.number().min(1).max(10);
 const ideaBriefSchema = z.object({
@@ -25,6 +27,12 @@ const ideaBriefSchema = z.object({
   /** Provider names for this run: one for "single", two or more for "mixed". Omit for defaults. */
   providers: z.array(z.string().trim().min(1)).max(10).optional(),
   /** "free": the site's key (capped per visitor per day). "own": the keys below, for this run only. */
+  keyMode: z.enum(["free", "own"]).default("free"),
+  ownKeys: z.array(ownKeySchema).max(6).optional(),
+});
+
+const draftRequestSchema = z.object({
+  idea: z.string().trim().min(3, "Describe your idea in a sentence or two.").max(1000, "Keep it under 1,000 characters. AI fills in the rest."),
   keyMode: z.enum(["free", "own"]).default("free"),
   ownKeys: z.array(ownKeySchema).max(6).optional(),
 });
@@ -43,51 +51,91 @@ export function ideasRouter(store: Store): Router {
     }),
   );
 
+  /**
+   * "Fill it in with AI": one sentence or two in, a complete brief out. Runs on the same key the
+   * visitor would run the council with (the site's, or their own for this request only).
+   */
+  r.post(
+    "/draft",
+    ah(async (req, res) => {
+      const parsed = draftRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Describe your idea first." });
+      const { idea, keyMode, ownKeys = [] } = parsed.data;
+
+      let provider;
+      if (keyMode === "own") {
+        if (!config.allowOwnKeys) return res.status(403).json({ error: "This site doesn’t allow your own key." });
+        const built = await privateCouncil(ownKeys.slice(0, 1));
+        if (!built.providers.length) return res.status(400).json({ error: built.problems[0]?.message ?? "Your key didn’t work." });
+        provider = built.providers[0];
+      } else {
+        if (!MOCK_MODE && !hasUsableProvider()) return res.status(503).json({ error: "Free runs aren’t working right now. You can use your own key instead." });
+        provider = primaryProvider();
+      }
+      const release = await takeRun(store, req, "draft");
+      if (!release) return res.status(429).json({ error: `You’ve used your ${limitFor("draft")} AI fill-ins for today. Fill in the form yourself, or try again tomorrow.` });
+
+      try {
+        const { value } = await callStructured(
+          provider,
+          { system: DRAFT_SYSTEM, user: `Idea: ${idea}`, schemaName: "submit_draft", schemaDescription: "Submit the complete idea brief.", schema: DRAFT_SCHEMA, maxTokens: 1200 },
+          draftZ,
+        );
+        await countVisit(store, req, { drafts: 1 });
+        res.json({ brief: value, model: `${provider.name === "mock" ? "simulated" : provider.name} · ${provider.model}`, simulated: provider.name === "mock" });
+      } catch (err) {
+        await release();
+        const msg = redactSecrets(err instanceof Error ? err.message : String(err), ownKeys.map((k) => k.apiKey));
+        res.status(502).json({ error: `AI couldn’t fill in the form this time (${msg.slice(0, 200)}). Try again, or fill it in yourself.` });
+      }
+    }),
+  );
+
   r.post(
     "/",
     ah(async (req, res) => {
       const parsed = ideaBriefSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid idea brief", issues: parsed.error.issues.map(({ path, message }) => ({ path, message })) });
+      if (!parsed.success) return res.status(400).json({ error: "Please add a title and a description.", issues: parsed.error.issues.map(({ path, message }) => ({ path, message })) });
       const { panelMode = config.panelMode, providers = [], keyMode, ownKeys = [], ...brief } = parsed.data;
-      if (panelMode === "mixed" && providers.length === 1) return res.status(400).json({ error: "A mixed council needs at least two providers." });
+      if (panelMode === "mixed" && providers.length === 1) return res.status(400).json({ error: "To mix models, pick at least 2." });
 
       let ownProviders: Awaited<ReturnType<typeof privateCouncil>>["providers"] | undefined;
       let release: (() => Promise<void>) | null;
 
       if (keyMode === "own") {
-        if (!config.allowOwnKeys) return res.status(403).json({ error: "Using your own key is switched off on this site." });
-        if (!ownKeys.length) return res.status(400).json({ error: "Paste your API key first." });
+        if (!config.allowOwnKeys) return res.status(403).json({ error: "This site doesn’t allow your own key." });
+        if (!ownKeys.length) return res.status(400).json({ error: "Add your API key first." });
         release = await takeRun(store, req, "own");
-        if (!release) return res.status(429).json({ error: `That's ${limitFor("own")} runs with your own key today, the most this site allows. It resets at midnight UTC.`, quota: await quotaStatus(store, req) });
+        if (!release) return res.status(429).json({ error: `You’ve used ${limitFor("own")} runs with your own key today, the most we allow. Try again tomorrow.`, quota: await quotaStatus(store, req) });
         // Built for this request only: fresh providers, never registered or cached, never stored.
         const built = await privateCouncil(ownKeys);
         if (!built.providers.length) {
           await release();
-          return res.status(400).json({ error: built.problems.map((p) => p.message).join(" ") || "Your key didn't work." });
+          return res.status(400).json({ error: built.problems.map((p) => p.message).join(" ") || "Your key didn’t work." });
         }
         ownProviders = built.providers;
         const names = new Set(ownProviders.map(providerKey));
         const missing = providers.filter((n) => !names.has(n));
         if (missing.length) {
           await release();
-          return res.status(400).json({ error: `Your key for ${missing.join(", ")} didn't work: ${built.problems.map((p) => p.message).join(" ")}` });
+          return res.status(400).json({ error: `Your ${missing.join(", ")} key didn’t work. ${built.problems.map((p) => p.message).join(" ")}` });
         }
       } else {
         if (!MOCK_MODE && !hasUsableProvider()) {
           const problems = providerHealth().filter((h) => h.status !== "ok").map((h) => h.message);
-          return res.status(503).json({ error: `The free tier isn't working right now. ${problems.join(" ")} You can use your own key instead.` });
+          return res.status(503).json({ error: `Free runs aren’t working right now. You can use your own key instead.` });
         }
         const usable = new Set<string>(panelProviders().map(providerKey));
         const unusable = providers.filter((n) => !usable.has(n));
-        if (unusable.length) return res.status(400).json({ error: `These providers aren't available right now: ${unusable.join(", ")}. Pick from: ${[...usable].join(", ") || "none"}.` });
+        if (unusable.length) return res.status(400).json({ error: `${unusable.join(", ")} isn’t working right now. Pick another AI model.` });
         const kind = freeKind();
         release = await takeRun(store, req, kind);
         if (!release) {
           await countVisit(store, req, { capHits: 1 });
           const msg =
             kind === "free"
-              ? `You've used your ${limitFor("free")} free runs for today. Paste your own API key to keep going (a free Groq key takes a minute to get), or come back after midnight UTC.`
-              : `You've used today's ${limitFor("sim")} runs. Come back after midnight UTC.`;
+              ? `You’ve used your ${limitFor("free")} free runs for today. Use your own API key to keep going (a free Groq key takes a minute to get), or come back tomorrow.`
+              : `You’ve used your ${limitFor("sim")} runs for today. Come back tomorrow.`;
           return res.status(429).json({ error: msg, quota: await quotaStatus(store, req) });
         }
       }
@@ -145,12 +193,12 @@ export function ideasRouter(store: Store): Router {
   r.delete(
     "/:id",
     ah(async (req, res) => {
-      if (isRunning(req.params.id)) return res.status(409).json({ error: "This idea is still being judged — wait for it to finish." });
+      if (isRunning(req.params.id)) return res.status(409).json({ error: "This idea is still being judged. Wait for it to finish." });
       const idea = await store.getIdea(req.params.id);
       if (!idea) return res.status(404).json({ error: "not found" });
       // Ideas are public to read, but only whoever submitted one (holding its token) may delete it.
       const token = req.get("x-owner-token") ?? "";
-      if (!idea.ownerHash || !token || !sameHash(idea.ownerHash, hashToken(token))) return res.status(403).json({ error: "Only the person who submitted this idea can delete it." });
+      if (!idea.ownerHash || !token || !sameHash(idea.ownerHash, hashToken(token))) return res.status(403).json({ error: "Only the person who asked about this idea can delete it." });
       await store.deleteIdea(req.params.id);
       res.status(204).end();
     }),

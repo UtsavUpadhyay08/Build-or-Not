@@ -26,6 +26,10 @@ One page, three parts:
 - **Proposal (left):** the idea brief, the six idea stats, and **the council**. Pick one model for all 45
   personas, or *mixed models* to share them evenly across the models you tick. Providers whose
   key check failed are listed as switched off, with the reason.
+- **Just type your idea:** a popup at the top of the form. Write a sentence or two and the AI writes
+  the full brief (title, description, audience, pricing, competitors, the six stats), then either fills
+  in the form for you to check or summons the council straight away. It uses the same key as the run
+  (the free tier or your own) and is capped at `DRAFTS_PER_DAY` (10) per visitor.
 - **The village (right):** 45 characters, each with a house and a name, in five districts. On submit
   they walk to the council square. As each real verdict streams in, that character walks to
   BUILD, MAYBE or DON'T BUILD. Click a character for their short take, then "Read full review"

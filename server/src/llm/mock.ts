@@ -70,6 +70,25 @@ export class MockProvider implements LLMProvider {
         };
       }
 
+      case "submit_draft": {
+        // Simulated "fill it in": echo the idea back as a plausible brief.
+        const idea = req.user.replace(/^[\s\S]*?Idea:\s*/, "").trim().replace(/\s+/g, " ");
+        const words = idea.split(" ").filter(Boolean);
+        const title = words.slice(0, 4).join(" ").replace(/[.,;:!?]+$/, "") || "Untitled idea";
+        const pick = (k: number) => 3 + ((seed >> k) % 6);
+        return {
+          data: {
+            title: title.charAt(0).toUpperCase() + title.slice(1),
+            description: `${idea.charAt(0).toUpperCase()}${idea.slice(1)}${/[.!?]$/.test(idea) ? "" : "."} (Simulated draft: add an API key for a real write-up.)`,
+            targetAudience: "(simulated) People who have this problem today",
+            pricingModel: "(simulated) Free to start, paid plan later",
+            competitors: "(simulated) Spreadsheets, existing apps",
+            sliders: { reach: pick(1), buildCost: pick(4), userImportance: pick(7), complexity: pick(10), value: pick(13), risk: pick(16) },
+          },
+          usage,
+        };
+      }
+
       case "submit_synthesis":
         return {
           data: {

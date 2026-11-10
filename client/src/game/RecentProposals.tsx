@@ -30,9 +30,9 @@ export function RecentProposals({ limit = 6 }: { limit?: number }) {
   return (
     <section className="recent" aria-labelledby="recent-h">
       <div className="recent-head">
-        <h2 id="recent-h">Recent proposals</h2>
+        <h2 id="recent-h">Ideas other people asked about</h2>
         <Link to="/history" className="recent-all">
-          See all past proposals →
+          See all →
         </Link>
       </div>
       <ul className="recent-grid">
@@ -54,7 +54,7 @@ export function RecentProposals({ limit = 6 }: { limit?: number }) {
                 <span className="recent-desc">{idea.description}</span>
                 <span className="recent-meta">
                   {ago(idea.createdAt)}
-                  {idea.mock ? " · simulated" : ""}
+                  {idea.mock ? " · simulated AI" : ""}
                   {ownerTokenFor(idea.id) ? " · yours" : ""}
                 </span>
               </Link>

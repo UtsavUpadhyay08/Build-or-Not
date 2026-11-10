@@ -92,8 +92,8 @@ export async function runPanel(deps: PanelDeps, ideaId: string, idea: IdeaBrief)
     const verdicts = await store.getVerdicts(ideaId);
     if (!meetsQuorum(verdicts.length, total, deps.quorum)) {
       throw new Error(
-        `Only ${verdicts.length} of ${total} personas responded (quorum is ${Math.round(deps.quorum * 100)}%). ` +
-          `Not publishing a verdict from a partial panel — resubmit or check provider status.`,
+        `Only ${verdicts.length} of ${total} personas answered, and at least ${Math.round(deps.quorum * 100)}% need to for a result. ` +
+          `Try again in a few minutes, or use another AI model.`,
       );
     }
 

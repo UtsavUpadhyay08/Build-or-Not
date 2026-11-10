@@ -35,7 +35,7 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
 
   const teams: { v: Exclude<V, "f">; label: string }[] = [
     { v: "b", label: "Team Build" },
-    { v: "m", label: "On the fence" },
+    { v: "m", label: "Maybe" },
     { v: "d", label: "Team Don’t Build" },
   ];
 
@@ -53,20 +53,20 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
   );
 
   const stats: { k: string; v: string; hint: string }[] = [
-    { k: "Overall score", v: `${s.overallScore} / 100`, hint: "Average persona score, rescaled to 0–100" },
-    { k: "Agreement", v: `${Math.round(d.agreement * 100)}%`, hint: "Share who gave the most common verdict" },
-    { k: "Score spread", v: d.scoreStdDev.toFixed(2), hint: "Standard deviation of the 1–10 scores" },
-    { k: "Verdict entropy", v: d.verdictEntropy.toFixed(2), hint: "0 = unanimous, 1 = even three-way split" },
-    { k: "Confidence", v: d.confidence[0].toUpperCase() + d.confidence.slice(1), hint: "From spread and entropy together" },
-    { k: "Responded", v: `${s.judged} / ${total}`, hint: s.failed ? `${s.failed} went home; 80% needed` : "Everyone answered" },
-    { k: "Tokens", v: (s.cost.inputTokens + s.cost.outputTokens).toLocaleString(), hint: `${s.cost.inputTokens.toLocaleString()} in · ${s.cost.outputTokens.toLocaleString()} out` },
-    { k: "Cost", v: s.cost.usd === null ? "Unpriced" : s.cost.usd === 0 ? "Free" : `$${s.cost.usd.toFixed(4)}`, hint: `Avg ${meanLatency.toFixed(1)}s per persona${repaired ? ` · ${repaired} answer${repaired === 1 ? "" : "s"} re-asked` : ""}` },
+    { k: "Overall score", v: `${s.overallScore} / 100`, hint: "Everyone’s scores averaged, out of 100" },
+    { k: "Agreement", v: `${Math.round(d.agreement * 100)}%`, hint: "How many picked the most popular answer" },
+    { k: "Score spread", v: d.scoreStdDev.toFixed(2), hint: "How far apart the scores are (higher = more split)" },
+    { k: "How split the votes are", v: d.verdictEntropy.toFixed(2), hint: "0 = everyone agrees, 1 = split three ways" },
+    { k: "Confidence", v: d.confidence[0].toUpperCase() + d.confidence.slice(1), hint: "High when most people agree" },
+    { k: "Responded", v: `${s.judged} / ${total}`, hint: s.failed ? `${s.failed} didn’t vote (80% needed)` : "Everyone answered" },
+    { k: "Tokens", v: (s.cost.inputTokens + s.cost.outputTokens).toLocaleString(), hint: `${s.cost.inputTokens.toLocaleString()} sent · ${s.cost.outputTokens.toLocaleString()} received` },
+    { k: "Cost", v: s.cost.usd === null ? "Not known" : s.cost.usd === 0 ? "Free" : `$${s.cost.usd.toFixed(4)}`, hint: `About ${meanLatency.toFixed(1)}s per persona${repaired ? ` · ${repaired} answer${repaired === 1 ? "" : "s"} re-asked` : ""}` },
   ];
 
   return (
     <section className="results rise" aria-labelledby="results-h">
       <div className="results-titlerow">
-        <h2 id="results-h">The council has spoken</h2>
+        <h2 id="results-h">The result</h2>
         <span className="muted">
           “{idea.title}”, judged by {s.judged} of {total} personas{idea.panelMode === "mixed" ? " across several models" : ""}
         </span>
@@ -86,12 +86,12 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
           <p>{s.summary}</p>
           <div className="chips">
             <span className="chip chip-gold">
-              {d.confidence === "high" ? "High" : d.confidence === "medium" ? "Medium" : "Low"} agreement · entropy {d.verdictEntropy.toFixed(2)}
+              {d.confidence === "high" ? "Most agree" : d.confidence === "medium" ? "Some disagreement" : "Opinions are split"}
             </span>
             <span className="chip">
-              {s.judged} voted{s.failed ? ` · ${s.failed} went home` : ""}
+              {s.judged} voted{s.failed ? ` · ${s.failed} didn’t` : ""}
             </span>
-            <span className="chip">{s.cost.usd === null ? "Cost: unpriced model" : s.cost.usd === 0 ? "Cost: free" : `Cost $${s.cost.usd.toFixed(4)}`}</span>
+            <span className="chip">{s.cost.usd === null ? "Cost: not known for this model" : s.cost.usd === 0 ? "Cost: free" : `Cost $${s.cost.usd.toFixed(4)}`}</span>
           </div>
         </div>
         <div className="podium">
@@ -126,8 +126,8 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
 
       <div className="row">
         <div className="card grow2">
-          <h3 className="card-h">Score distribution</h3>
-          <p className="muted small">How many personas gave each score from 1 to 10.</p>
+          <h3 className="card-h">How people scored it</h3>
+          <p className="muted small">How many personas gave each score, from 1 to 10.</p>
           <div className="hist" role="img" aria-label={`Score distribution: ${hist.map((h) => `${h.n} gave ${h.score}`).join(", ")}`}>
             {hist.map((h) => (
               <div key={h.score} className="hist-col">
@@ -139,16 +139,16 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
           </div>
         </div>
         <div className="card grow1">
-          <h3 className="card-h">{d.byProvider.length > 1 ? "Model scoreboard" : "Model"}</h3>
+          <h3 className="card-h">{d.byProvider.length > 1 ? "Scores by AI model" : "AI model"}</h3>
           {d.byProvider.length > 1 ? (
             <>
-              <p className="muted small">Average score from each model’s personas. A big gap means the models see the idea differently.</p>
+              <p className="muted small">Average score from each model. A big gap means the models disagree.</p>
               {d.byProvider.map((g) => (
                 <Bar key={g.key} label={g.key} n={g.n} mean={g.meanScore} color="#FBBF24" />
               ))}
             </>
           ) : (
-            <p className="muted">All {s.judged} answers came from {d.byProvider[0]?.key ?? "one model"}. Pick “Mixed models” to compare models side by side.</p>
+            <p className="muted">All {s.judged} answers came from {d.byProvider[0]?.key ?? "one model"}. Choose “Mix models” to compare models.</p>
           )}
         </div>
       </div>
@@ -156,8 +156,8 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
       {s.themesAvailable ? (
         <div className="row">
           {[
-            { title: "What worried the village", items: s.topConcerns, color: VSTYLE.d.solid },
-            { title: "What the village loved", items: s.topAppeals, color: VSTYLE.b.solid },
+            { title: "Main worries", items: s.topConcerns, color: VSTYLE.d.solid },
+            { title: "What people liked", items: s.topAppeals, color: VSTYLE.b.solid },
           ].map((g) => (
             <div key={g.title} className="card grow1">
               <h3 className="card-h">{g.title}</h3>
@@ -178,14 +178,14 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
         </div>
       ) : (
         <div className="card">
-          <p className="muted">Theme extraction didn’t run this time, so recurring concerns and appeals aren’t grouped. Every individual review is still available above and below.</p>
+          <p className="muted">The summary of common worries didn’t run this time. Every person’s answer is still below.</p>
         </div>
       )}
 
       <div className="row">
         <div className="card grow2">
-          <h3 className="card-h">District scoreboard</h3>
-          <p className="muted small">Average score out of 10 per district. A wide spread means the idea works for some people and not for others.</p>
+          <h3 className="card-h">Scores by group</h3>
+          <p className="muted small">Average score out of 10 for each group. A big gap means it suits some people and not others.</p>
           {[...d.byCategory]
             .sort((a, b) => b.meanScore - a.meanScore)
             .map((g, k) => (
@@ -193,13 +193,13 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
             ))}
         </div>
         <div className="card grow1">
-          <h3 className="card-h">Empty seats</h3>
+          <h3 className="card-h">Who didn’t vote</h3>
           {failures.length === 0 ? (
-            <p className="muted">Nobody went home: all {total} personas voted.</p>
+            <p className="muted">Everyone voted: all {total} personas.</p>
           ) : (
             <>
               <p className="muted small">
-                These personas went home without voting. The verdict uses the other {s.judged}, {s.judged / total >= 0.8 ? "still above" : "below"} the 80% minimum.
+                These personas didn’t vote. The result uses the other {s.judged}, which is {s.judged / total >= 0.8 ? "enough" : "not enough"} (80% needed).
               </p>
               {failures.map((f) => {
                 const p = byId.get(f.personaId);
@@ -208,7 +208,7 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
                   <button key={f.personaId} type="button" className="seat" onClick={() => onOpen(f.personaId)}>
                     <strong>{p?.name ?? f.personaId}</strong>
                     <span>{story.short}</span>
-                    <span className="seat-link">See what happened →</span>
+                    <span className="seat-link">See why →</span>
                   </button>
                 );
               })}
@@ -272,12 +272,12 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
 
       <div className="card">
         <div className="table-head">
-          <h3 className="card-h">Every score</h3>
+          <h3 className="card-h">All scores</h3>
           <label className="sort">
             Sort by{" "}
             <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
               <option value="score">Score</option>
-              <option value="district">District</option>
+              <option value="district">Group</option>
               <option value="name">Name</option>
             </select>
           </label>
@@ -287,7 +287,7 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
             <thead>
               <tr>
                 <th scope="col">Persona</th>
-                <th scope="col">District</th>
+                <th scope="col">Group</th>
                 <th scope="col">Verdict</th>
                 <th scope="col" className="num">
                   Score
@@ -331,7 +331,7 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
           {copyLabel}
         </button>
         <button type="button" className="gbtn" onClick={onReset}>
-          Tweak the idea and ask again
+          Change the idea and ask again
         </button>
       </div>
     </section>

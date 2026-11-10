@@ -139,8 +139,8 @@ export function Village({ personas, stage, arrival, verdictOf, selectedId, onPic
           )}
           {!out && (
             <>
-              <div className="v-abs v-idle-title">The council is home.</div>
-              <div className="v-abs v-idle-sub">Write a proposal to call them to the square.</div>
+              <div className="v-abs v-idle-title">Everyone is at home.</div>
+              <div className="v-abs v-idle-sub">Describe your idea to call them to the square.</div>
             </>
           )}
 
