@@ -180,6 +180,25 @@ export interface SendPlan {
   providers: ProviderPlan[];
   /** Plain-language warnings, e.g. not enough requests left today. */
   warnings: string[];
+  /** Other ideas being judged on the same shared keys when this one started (they take turns). */
+  sharedWith?: number;
+}
+
+/**
+ * Adjust a plan for other runs already using the same shared keys. The queue takes turns between
+ * runs, so with N others each run gets about 1/(N+1) of the capacity: fewer calls start right
+ * away and sending takes about N+1 times as long. Pure.
+ */
+export function shareSendPlan(plan: SendPlan, others: number): SendPlan {
+  if (others <= 0) return plan;
+  const k = others + 1;
+  return {
+    ...plan,
+    sharedWith: others,
+    startNow: plan.startNow > 0 ? Math.max(1, Math.floor(plan.startNow / k)) : 0,
+    startAllSec: Math.ceil(Math.max(plan.startAllSec, 1) * k),
+    providers: plan.providers.map((p) => ({ ...p, startAllSec: Math.ceil(Math.max(p.startAllSec, 1) * k) })),
+  };
 }
 
 /** Combine per-provider capacity with how many personas each provider got. Pure. */

@@ -88,7 +88,7 @@ export class ManagedProvider implements LLMProvider {
       const out = await withRetry(
         async () => {
           attempts++;
-          await this.bucket.acquire();
+          await this.bucket.acquire(1, req.fairKey);
           this.stats.calls++;
           return this.inner.complete(req);
         },

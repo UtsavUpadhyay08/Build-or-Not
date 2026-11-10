@@ -19,6 +19,8 @@ export interface CompletionRequest {
   schema: JsonSchema;
   maxTokens: number;
   signal?: AbortSignal;
+  /** Who this call is for (an idea id). Shared rate limits take turns between owners. */
+  fairKey?: string;
 }
 
 export interface Usage {

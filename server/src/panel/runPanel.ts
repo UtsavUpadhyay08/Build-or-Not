@@ -67,7 +67,7 @@ export async function runPanel(deps: PanelDeps, ideaId: string, idea: IdeaBrief)
         let provider = assigned;
         try {
           provider = deps.reroute ? deps.reroute(assigned, index) : assigned;
-          const out = await judgePersona(provider, persona, idea, total, { signal: deps.signal });
+          const out = await judgePersona(provider, persona, idea, total, { signal: deps.signal, fairKey: ideaId });
           const verdict: PersonaVerdict = { ideaId, personaId: persona.id, createdAt: new Date().toISOString(), ...out };
           await store.saveVerdict(verdict);
           emit({ type: "verdict", verdict, completed: ++completed, total });
@@ -144,6 +144,7 @@ async function synthesize(deps: PanelDeps, ideaId: string, idea: IdeaBrief, verd
         schema: SYNTHESIS_SCHEMA,
         maxTokens: 1500,
         signal: deps.signal,
+        fairKey: ideaId,
       },
       synthesisZ,
     );

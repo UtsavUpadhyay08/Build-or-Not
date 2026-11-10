@@ -23,10 +23,6 @@ services:
         generateValue: true
       - key: ADMIN_TOKEN # unlocks /stats (your visitor numbers); Render generates it, copy it from Environment
         generateValue: true
-      # Proxies in front of the app. Check the "[visitor IP]" line in the log after your first
-      # visit and set the number it suggests.
-      - key: TRUST_PROXY
-        value: "1"
       - key: PROVIDERS
         value: groq
       - key: FREE_RUNS_PER_DAY

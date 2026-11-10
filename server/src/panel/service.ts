@@ -2,13 +2,16 @@
 import { config, MOCK_MODE, type PanelMode } from "../config.js";
 import { PERSONAS } from "../personas.js";
 import { assignProviders, panelProviders, planRun, primaryProvider, providerKey, synthesisProvider } from "../llm/registry.js";
-import type { SendPlan } from "../llm/capacity.js";
+import { shareSendPlan, type SendPlan } from "../llm/capacity.js";
 import type { ManagedProvider } from "../llm/managed.js";
 import type { Store } from "../store/store.js";
 import type { IdeaBrief } from "../types.js";
 import { progressEmitter, releaseEmitter, runPanel } from "./runPanel.js";
 
 const inFlight = new Set<string>();
+/** Runs on the site's shared keys (not a visitor's own key). They take turns in the queue. */
+const sharedInFlight = new Set<string>();
+let preparingShared = 0;
 
 /**
  * Which providers sit on this council. `names` is what the user picked in the UI (validated by the
@@ -53,13 +56,22 @@ export async function prepareRun(idea: IdeaBrief, mode: PanelMode, names: string
     council = councilFor(mode, names);
   }
   const assignments = mode === "single" || council.length === 1 ? PERSONAS.map(() => council[0]) : assignProviders(PERSONAS, "mixed", council);
-  const plan = await planRun(assignments, ideaChars(idea));
+  // Count runs being set up at this same moment too, so six people clicking together all hear about each other.
+  if (!ownProviders) preparingShared++;
+  let measured: SendPlan;
+  try {
+    measured = await planRun(assignments, ideaChars(idea));
+  } finally {
+    if (!ownProviders) preparingShared--;
+  }
+  const plan = ownProviders ? measured : shareSendPlan(measured, sharedInFlight.size + preparingShared);
   return { council, assignments, synthesis: ownProviders ? council[0] : synthesisProvider(), plan, own: !!ownProviders };
 }
 
 export function startPanel(store: Store, ideaId: string, idea: IdeaBrief, prepared: PreparedRun): void {
   if (inFlight.has(ideaId)) return;
   inFlight.add(ideaId);
+  if (!prepared.own) sharedInFlight.add(ideaId);
   const emitter = progressEmitter(ideaId);
   void runPanel(
     {
@@ -82,6 +94,7 @@ export function startPanel(store: Store, ideaId: string, idea: IdeaBrief, prepar
     idea,
   ).finally(() => {
     inFlight.delete(ideaId);
+    sharedInFlight.delete(ideaId);
     releaseEmitter(ideaId);
   });
 }

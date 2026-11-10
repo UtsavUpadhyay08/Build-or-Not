@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { clientIp, clientIpSource } from "./security/clientIp.js";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -16,22 +17,22 @@ import type { Store } from "./store/store.js";
 
 export function createApp(store: Store) {
   const app = express();
-  // Behind a host's proxy (Render: 1 hop) req.ip must come from X-Forwarded-For, or every visitor
-  // looks like the proxy and shares one daily limit. Off by default so it can't be spoofed locally.
+  // Only used when no trusted IP header applies (see security/clientIp.ts). 0 = the direct connection.
   app.set("trust proxy", config.trustProxy);
 
-  // Hosts don't always document how many proxies sit in front of the app. For the first few API
-  // requests, log the shape of X-Forwarded-For (counts only, no addresses) and the TRUST_PROXY value
-  // that matches it, so the owner can set it from the host's log after the first visit.
+  // For the first few API requests, log where the visitor's IP is read from (no addresses), so the
+  // owner can see in the host's log that visitors are told apart.
   let ipChecks = 0;
   app.use("/api", (req, _res, next) => {
     if (ipChecks < 3 && process.env.NODE_ENV === "production") {
       ipChecks++;
-      const xff = (req.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-      const extra = ["true-client-ip", "cf-connecting-ip", "x-real-ip"].filter((h) => req.get(h)).join(", ") || "none";
-      const suggest = xff.length;
-      const status = config.trustProxy === suggest ? "matches" : `set TRUST_PROXY=${suggest} (now ${config.trustProxy})`;
-      console.log(`[visitor IP] X-Forwarded-For has ${xff.length} address${xff.length === 1 ? "" : "es"}; other IP headers: ${extra}. ${suggest ? status : "No proxy in front, TRUST_PROXY=0 is right."} (Valid when this request came straight from a browser.)`);
+      const xff = (req.get("x-forwarded-for") ?? "").split(",").filter((x) => x.trim()).length;
+      const headers = ["true-client-ip", "cf-connecting-ip", "x-real-ip"].filter((h) => req.get(h));
+      const found = clientIp(req) !== (req.ip ?? "");
+      console.log(
+        `[visitor IP] Reading it from ${clientIpSource()}${found || process.env.RENDER !== "true" ? "" : " (header missing on this request: fell back to the connection)"}. ` +
+          `X-Forwarded-For has ${xff} address${xff === 1 ? "" : "es"}; IP headers present: ${headers.join(", ") || "none"}.`,
+      );
     }
     next();
   });
@@ -79,6 +80,8 @@ export function createApp(store: Store) {
       limit: config.limits.apiPerMinute,
       standardHeaders: "draft-7",
       legacyHeaders: false,
+      keyGenerator: (req) => clientIp(req), // the real visitor, not the host's proxy
+      validate: { trustProxy: false, xForwardedForHeader: false },
       skip: (req) => req.path === "/health",
       message: { error: "Too many requests. Slow down and try again in a minute." },
     }),

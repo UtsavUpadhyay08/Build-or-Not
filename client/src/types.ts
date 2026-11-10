@@ -183,6 +183,7 @@ export interface SendPlan {
   startAllSec: number;
   providers: (Capacity & { key: string; name: string; model: string; personas: number; startAllSec: number })[];
   warnings: string[];
+  sharedWith?: number;
 }
 
 export interface ProviderHealth {

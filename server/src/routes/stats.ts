@@ -10,6 +10,7 @@
  */
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
+import { clientIp } from "../security/clientIp.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { Store, VisitDay } from "../store/store.js";
@@ -87,7 +88,9 @@ const sum = (xs: VisitDay[], key: string) => xs.reduce((s, v) => s + (v.counts[k
 export function adminRouter(store: Store): Router {
   const r = Router();
   r.use(
-    rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-7", legacyHeaders: false, message: { error: "Too many attempts. Wait 15 minutes." } }),
+    rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-7", legacyHeaders: false,
+      keyGenerator: (req) => clientIp(req), // the real visitor, not the host's proxy
+      validate: { trustProxy: false, xForwardedForHeader: false }, message: { error: "Too many attempts. Wait 15 minutes." } }),
   );
   r.use((req, res, next) => {
     if (!process.env.ADMIN_TOKEN || process.env.ADMIN_TOKEN.trim().length < 16) return res.status(404).json({ error: "not found" });

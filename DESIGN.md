@@ -182,9 +182,14 @@ worth even more.
   (a sleeping or restarting free host would otherwise hand out fresh runs), keyed by HMAC(IP), with a
   TTL index that deletes them at midnight UTC. A run that fails to start gives its slot back.
 - **The real visitor IP.** Behind a proxy, `req.ip` is only right if `trust proxy` equals the number
-  of hops. Too low and everyone shares one counter; too high and anyone can fake an IP with
-  `X-Forwarded-For`. The host doesn't document the number, so the app logs the forwarded-chain length
-  on its first requests and the README has a curl test for spoofing.
+  of hops: too low and everyone shares one counter, too high and anyone can fake an IP with
+  `X-Forwarded-For`. This bit me in production: on Render the chain is visitor → Cloudflare → Render's
+  internal proxy, `trust proxy` was 1, so every visitor got the internal proxy's address and the whole
+  internet shared 3 free runs. The fix stops counting hops: on Render (`RENDER=true`) the app reads
+  `True-Client-IP`, which Render's Cloudflare edge sets to the real address and overwrites if a client
+  sends its own. Headers are trusted only there (or when `CLIENT_IP_HEADER` names one), never locally,
+  so they can't be faked. Tests replay Render's setup: same proxy address, different `True-Client-IP`,
+  separate counters; a fake `X-Forwarded-For` changes nothing.
 - **Headers.** helmet with a strict CSP: own scripts only, Google Fonts for styles and fonts,
   `frame-ancestors 'none'`, `object-src 'none'`. Plus HSTS, nosniff, `Referrer-Policy: no-referrer`,
   a Permissions-Policy denying camera, mic and location, and `Cache-Control: no-store` on the API. No
@@ -207,3 +212,16 @@ better trade.
   (the current breaker only covers permanent errors like bad keys).
 - Embedding-based diversity instead of lexical Jaccard.
 - Prompt caching for the persona system prompts (identical across ideas) to cut cost.
+
+### Many people on the shared key at once: taking turns
+
+Six visitors clicked "Fill it in and ask the council" in the same second. All six runs started, but
+the queue was first-come: after 70 s the first idea had 21 answers and the other five had 6, 0, 0, 0, 0.
+The first council took every slot the shared keys freed up.
+
+Now each call names its run (`fairKey` = idea id) and the token bucket keeps one line per run. Runs
+take turns, one call each, round and round; inside a run it's still first-come. Re-running the same
+test, the first idea keeps the head start it got from the free burst, then all six move at the same
+pace (each about 4 answers a minute on 3 free keys). The send plan also says how many other ideas
+are being judged on the free key, so nobody is promised "18 questions go out now" when that's shared.
+A visitor's own key has its own bucket, so it never waits behind anyone.

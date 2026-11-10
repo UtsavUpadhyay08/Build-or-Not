@@ -268,3 +268,38 @@ describe("fill it in with AI", () => {
     expect((await post("/api/ideas/draft", { idea: "  " }, "203.0.113.202")).status).toBe(400);
   });
 });
+
+describe("real visitor IP on Render (behind Cloudflare)", () => {
+  // Every request reaches the app from the same internal proxy, like on Render.
+  const viaRender = (clientIp: string, extra: Record<string, string> = {}) =>
+    post("/api/ideas", brief, "10.0.0.1", { "true-client-ip": clientIp, ...extra });
+
+  it("gives each visitor their own 3 free runs, even though the proxy address is the same", async () => {
+    process.env.RENDER = "true";
+    try {
+      for (let i = 0; i < 3; i++) expect((await viaRender("198.18.0.1")).status).toBe(201);
+      expect((await viaRender("198.18.0.1")).status).toBe(429); // visitor 1 used theirs
+      expect((await viaRender("198.18.0.2")).status).toBe(201); // visitor 2 is not affected
+      expect((await viaRender("198.18.0.3")).status).toBe(201);
+    } finally {
+      delete process.env.RENDER;
+    }
+  });
+
+  it("can't be fooled by a made-up X-Forwarded-For on Render", async () => {
+    process.env.RENDER = "true";
+    try {
+      // Visitor 1 is out of runs; faking another address in X-Forwarded-For changes nothing.
+      expect((await post("/api/ideas", brief, "203.0.113.99, 10.0.0.1", { "true-client-ip": "198.18.0.1" })).status).toBe(429);
+    } finally {
+      delete process.env.RENDER;
+    }
+  });
+
+  it("ignores IP headers when not on Render, so nobody can fake them locally", async () => {
+    // Same connection (TRUST_PROXY hop) each time; a different True-Client-IP must not give new runs.
+    const ip = "203.0.113.150";
+    for (let i = 0; i < 3; i++) await post("/api/ideas", brief, ip, { "true-client-ip": `198.18.1.${i}` });
+    expect((await post("/api/ideas", brief, ip, { "true-client-ip": "198.18.1.99" })).status).toBe(429);
+  });
+});

@@ -5,6 +5,7 @@
  */
 import { createHmac } from "node:crypto";
 import type { Request } from "express";
+import { clientIp } from "./clientIp.js";
 import { config, MOCK_MODE } from "../config.js";
 import type { Store } from "../store/store.js";
 
@@ -14,7 +15,7 @@ export function visitorId(req: Request): string {
     warned = true;
     console.warn("IP_HASH_SECRET is not set: visitor IPs are hashed with a built-in secret. Set a long random value on the host.");
   }
-  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const ip = clientIp(req);
   return createHmac("sha256", config.ipHashSecret || "build-or-not/visitor").update(ip).digest("base64url").slice(0, 32);
 }
 

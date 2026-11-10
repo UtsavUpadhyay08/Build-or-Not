@@ -195,10 +195,10 @@ git push -u origin main
    (`IP_HASH_SECRET` is generated for you.)
 3. Wait for the build (a few minutes), then open `https://build-or-not.onrender.com` (or whatever URL
    Render shows).
-4. **Set the proxy count.** After your first visit, open the service's **Logs** and find the line
-   starting `[visitor IP]`. If it says `set TRUST_PROXY=N`, go to **Environment**, set `TRUST_PROXY`
-   to that N, and save (Render redeploys). This is what makes the 3-a-day limit count each visitor
-   separately and stops anyone faking their IP to get more runs.
+4. **Check visitors are told apart.** After your first visit, open **Logs** and find the line starting
+   `[visitor IP]`. It should say `Reading it from Render's True-Client-IP header`. That's what gives
+   each visitor their own 3 free runs. Nothing to set: the app detects Render by itself. (If you set
+   `TRUST_PROXY` earlier, delete it; it's no longer used on Render.)
 
 ### 4. Check it before you share the link
 
@@ -212,7 +212,7 @@ git push -u origin main
     -H "X-Forwarded-For: 1.2.3.4" \
     -d '{"title":"t","description":"d","sliders":{"reach":5,"buildCost":5,"userImportance":5,"complexity":5,"value":5,"risk":5}}'
   ```
-  If it's accepted, `TRUST_PROXY` is too high. Lower it by one.
+  If it's accepted, check the `[visitor IP]` log line and tell whoever maintains the app.
 - **Ideas:** in a private window you can open other people's ideas but see no Delete button.
 - **Own key:** run once with your own key, then search Render's logs for the first few characters
   of the key. Nothing should come up.

@@ -7,6 +7,7 @@
  */
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
+import { clientIp } from "../security/clientIp.js";
 import { z } from "zod";
 import { config } from "../config.js";
 import { measureProvider, OWN_KEY_PROVIDERS, privateCouncil } from "../llm/registry.js";
@@ -32,6 +33,8 @@ export function keysRouter(): Router {
       limit: config.limits.keyChecksPerHour,
       standardHeaders: "draft-7",
       legacyHeaders: false,
+      keyGenerator: (req) => clientIp(req), // the real visitor, not the host's proxy
+      validate: { trustProxy: false, xForwardedForHeader: false },
       message: { error: `You’ve checked ${config.limits.keyChecksPerHour} keys in the last hour. Try again later.` },
     }),
     ah(async (req, res) => {

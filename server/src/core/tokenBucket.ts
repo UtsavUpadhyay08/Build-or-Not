@@ -8,8 +8,10 @@
  *   refillPerSec = the sustained rate (e.g. 50 RPM -> 50/60 ≈ 0.83 tokens/sec)
  *
  * Design choices worth being able to defend:
- *  - FIFO waiters: requests are granted in arrival order, so one persona can't be starved by
- *    others that happened to retry at a lucky moment.
+ *  - Fair waiters: callers may name an owner (one idea's run). Waiters are grouped per owner and
+ *    the owners take turns, one call each, round and round; within an owner it's FIFO. So when
+ *    six people submit at once on the shared site key, all six councils move forward together
+ *    instead of the first one taking every slot. With no owner it's plain FIFO.
  *  - Lazy refill: we don't run a setInterval. Tokens are recomputed from elapsed time whenever
  *    someone asks, and a single timer is armed only while someone is waiting. No background work
  *    when idle.
@@ -40,7 +42,9 @@ export class TokenBucket {
   private tokens: number;
   private lastRefill: number;
   private pausedUntil = 0;
-  private readonly queue: Waiter[] = [];
+  /** Waiters per owner. Map order is the turn order: the owner just served moves to the back. */
+  private readonly queues = new Map<string, Waiter[]>();
+  private queued = 0;
   private timer: unknown = null;
 
   private cap: number;
@@ -81,12 +85,24 @@ export class TokenBucket {
   }
 
   /** Resolves once `cost` tokens have been taken. */
-  acquire(cost = 1): Promise<void> {
+  acquire(cost = 1, owner = ""): Promise<void> {
     if (cost > this.capacity) throw new Error(`TokenBucket: cost ${cost} exceeds capacity ${this.capacity}`);
     return new Promise<void>((resolve) => {
-      this.queue.push({ cost, resolve });
+      const q = this.queues.get(owner);
+      if (q) q.push({ cost, resolve });
+      else this.queues.set(owner, [{ cost, resolve }]);
+      this.queued++;
       this.drain();
     });
+  }
+
+  /** How many owners (runs) currently have someone waiting. */
+  get waitingOwners(): number {
+    return this.queues.size;
+  }
+
+  private head(): [string, Waiter[]] | undefined {
+    return this.queues.entries().next().value;
   }
 
   /** Block every caller until `ms` from now (used on 429 Retry-After). Never shortens an existing pause. */
@@ -104,7 +120,7 @@ export class TokenBucket {
   }
 
   get waiting(): number {
-    return this.queue.length;
+    return this.queued;
   }
 
   private refill(): void {
@@ -126,14 +142,20 @@ export class TokenBucket {
       return;
     }
     this.refill();
-    // Grant strictly in FIFO order: if the head can't be served, nobody behind it is either.
-    while (this.queue.length > 0 && this.tokens >= this.queue[0].cost) {
-      const w = this.queue.shift()!;
+    // Serve the owner at the front of the turn order, then send it to the back. If the front
+    // waiter can't be served yet, nobody is (no overtaking, so big calls can't starve).
+    for (let h = this.head(); h && this.tokens >= h[1][0].cost; h = this.head()) {
+      const [owner, q] = h;
+      const w = q.shift()!;
+      this.queued--;
+      this.queues.delete(owner);
+      if (q.length > 0) this.queues.set(owner, q);
       this.tokens -= w.cost;
       w.resolve();
     }
-    if (this.queue.length > 0) {
-      const deficit = this.queue[0].cost - this.tokens;
+    const h = this.head();
+    if (h) {
+      const deficit = h[1][0].cost - this.tokens;
       this.arm(Math.ceil((deficit / this.rate) * 1000));
     }
   }

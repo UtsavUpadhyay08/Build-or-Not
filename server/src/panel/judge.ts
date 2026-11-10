@@ -11,7 +11,7 @@ export async function judgePersona(
   persona: Persona,
   idea: IdeaBrief,
   panelSize: number,
-  opts: DescribeOptions & { signal?: AbortSignal } = {},
+  opts: DescribeOptions & { signal?: AbortSignal; fairKey?: string } = {},
 ): Promise<VerdictPayload & CallMeta> {
   const t0 = Date.now();
   const res = await callStructured(
@@ -24,6 +24,7 @@ export async function judgePersona(
       schema: VERDICT_SCHEMA,
       maxTokens: 600,
       signal: opts.signal,
+      fairKey: opts.fairKey,
     },
     verdictZ,
   );

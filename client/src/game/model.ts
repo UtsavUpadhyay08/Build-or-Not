@@ -205,5 +205,9 @@ export function planSentence(startNow: number, total: number, allSentSec: number
 }
 
 export function planFromServer(plan: SendPlan, total = 45): string {
-  return planSentence(plan.startNow, total, plan.startAllSec);
+  const base = planSentence(plan.startNow, total, plan.startAllSec);
+  const n = plan.sharedWith ?? 0;
+  if (n <= 0) return base;
+  const others = n === 1 ? "1 other idea is" : `${n} other ideas are`;
+  return `${others} being judged on the free key right now, so they take turns. ${base}`;
 }
