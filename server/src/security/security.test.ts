@@ -18,7 +18,8 @@ process.env.TRUST_PROXY = "1";
 process.env.MOCK_LATENCY_MS = "5";
 process.env.PANEL_QUORUM = "0.8";
 process.env.GROQ_BURST = "45"; // the fake Groq has no real limits; don't make the test wait on the documented 30/min
-process.env.MOCK_RPM = "60000"; // several free runs share the simulated provider in this file
+process.env.MOCK_RPM = "60000";
+process.env.ADMIN_TOKEN = "test-admin-token-0123456789"; // several free runs share the simulated provider in this file
 process.env.API_REQUESTS_PER_MINUTE = "100000"; // the polling below would trip the normal 120/min limit
 
 const KEY_A = "gsk_visitorAAAA1111aaaa2222";
@@ -202,5 +203,32 @@ describe("redaction", async () => {
     expect(redactSecrets("key AIzaSyA-1234567890abcdef rejected")).not.toContain("AIza");
     expect(redactSecrets("bad sk-or-v1-abcdef123456")).not.toContain("sk-or");
     expect(redactSecrets("token mysecretvalue123", ["mysecretvalue123"])).toBe("token [key hidden]");
+  });
+});
+
+describe("visit stats: private to the owner, no personal data", () => {
+  it("counts page loads with only the referring site's host", async () => {
+    const send = (ip: string, ref: string, path = "/") => post("/api/visit", { path, ref }, ip);
+    expect((await send("100.64.0.1", "https://www.linkedin.com/in/someone/details?x=secret")).status).toBe(204);
+    await send("100.64.0.1", "", "/ideas/abc");
+    await send("100.64.0.2", "https://github.com/me/build-or-not");
+    const dump = JSON.stringify([...(store as unknown as { visits: Map<string, unknown> }).visits.values()]);
+    expect(dump).toContain("linkedin.com");
+    expect(dump).not.toContain("someone"); // no path or query from the referrer
+    expect(dump).not.toContain("100.64.0"); // no raw IPs
+  });
+
+  it("stats need the admin token", async () => {
+    expect((await fetch(`${base}/api/admin/stats`)).status).toBe(401);
+    expect((await fetch(`${base}/api/admin/stats`, { headers: { authorization: "Bearer wrong-token-0000000000" } })).status).toBe(401);
+    const res = await fetch(`${base}/api/admin/stats`, { headers: { authorization: "Bearer test-admin-token-0123456789" } });
+    expect(res.status).toBe(200);
+    const s = await res.json();
+    expect(s.totals.uniqueVisitors).toBeGreaterThanOrEqual(2);
+    expect(s.referrers.map((r: { host: string }) => r.host)).toEqual(expect.arrayContaining(["linkedin.com", "github.com"]));
+    expect(s.totals.runs).toBeGreaterThan(0);
+    expect(s.totals.hitFreeLimit).toBeGreaterThanOrEqual(1); // the free-tier test above hit the cap
+    expect(s.daily).toHaveLength(30);
+    expect(JSON.stringify(s)).not.toContain("ownerHash");
   });
 });

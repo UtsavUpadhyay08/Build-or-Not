@@ -30,7 +30,7 @@ const VERDICT: Record<Verdict, { label: string; tone: string }> = {
 };
 
 function HistoryList() {
-  const [items, setItems] = useState<{ idea: IdeaRecord; synthesis: Synthesis | null }[]>([]);
+  const [items, setItems] = useState<{ idea: IdeaRecord; synthesis: Synthesis | null }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,18 +43,28 @@ function HistoryList() {
     try {
       await api.deleteIdea(id, token);
       forgetOwned(id);
-      setItems((xs) => xs.filter((x) => x.idea.id !== id));
+      setItems((xs) => (xs ?? []).filter((x) => x.idea.id !== id));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }
 
   if (error) return <div className="error-box">{error}</div>;
-  if (items.length === 0) return null;
+  if (items === null) return <p className="muted">Loading past proposals…</p>;
+  if (items.length === 0)
+    return (
+      <div className="card">
+        <h2>No proposals yet</h2>
+        <p className="muted">
+          Nobody has asked the council anything yet. <Link to="/">Be the first →</Link>
+        </p>
+      </div>
+    );
 
   return (
     <div className="card">
-      <h2>Past submissions</h2>
+      <h2>Past proposals</h2>
+      <p className="muted">Every idea anyone has put to the council. Click one to see its full results. You can delete only the ones you submitted.</p>
       <div className="table-scroll">
       <table className="history-table">
         <thead>

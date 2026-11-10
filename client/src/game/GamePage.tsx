@@ -10,6 +10,7 @@ import { Results } from "./Results";
 import { Village } from "./Village";
 import { VSTYLE, explainFailure, planFromServer, sortByArrival, splitName, toV, type Stage, type V } from "./model";
 import { RunOptions, loadRememberedKeys, type KeyMode } from "./RunOptions";
+import { RecentProposals } from "./RecentProposals";
 
 const EMPTY_BRIEF: IdeaBrief = {
   title: "",
@@ -474,6 +475,7 @@ export function GamePage() {
                 copyLabel={copyLabel}
               />
             )}
+            {stage === "idle" && <RecentProposals />}
             {stage === "failed" && (
               <section className="results">
                 <div className="card">

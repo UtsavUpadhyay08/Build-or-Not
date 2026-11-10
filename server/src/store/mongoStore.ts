@@ -19,13 +19,14 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
 import type { IdeaRecord, IdeaStatus, PersonaFailure, PersonaVerdict, Synthesis } from "../types.js";
 import type { EvalJudgment } from "../eval/types.js";
-import { evalKey, type Store } from "./store.js";
+import { evalKey, type Store, type VisitDay } from "./store.js";
 
 type IdeaDoc = Omit<IdeaRecord, "id"> & { _id: string };
 type JudgmentDoc = { _id: string; ok: true; data: PersonaVerdict; ideaId: string; createdAt: string } | { _id: string; ok: false; data: PersonaFailure; ideaId: string; createdAt: string };
 type SynthesisDoc = Synthesis & { _id: string };
 type EvalDoc = EvalJudgment & { _id: string };
 type QuotaDoc = { _id: string; n: number; expiresAt: Date };
+type VisitDoc = { _id: string; day: string; visitor: string; counts: Record<string, number>; ref: string; firstPage: string; expiresAt: Date };
 
 export class MongoStore implements Store {
   private constructor(
@@ -35,6 +36,7 @@ export class MongoStore implements Store {
     private readonly syntheses: Collection<SynthesisDoc>,
     private readonly evalJudgments: Collection<EvalDoc>,
     private readonly quotas: Collection<QuotaDoc>,
+    private readonly visits: Collection<VisitDoc>,
   ) {}
 
   static async connect(uri: string): Promise<MongoStore> {
@@ -48,6 +50,7 @@ export class MongoStore implements Store {
       db.collection<SynthesisDoc>("syntheses"),
       db.collection<EvalDoc>("eval_judgments"),
       db.collection<QuotaDoc>("quotas"),
+      db.collection<VisitDoc>("visits"),
     );
     await store.ensureIndexes();
     return store;
@@ -62,6 +65,8 @@ export class MongoStore implements Store {
       // Counters delete themselves when their day is over. (Some Mongo-compatible servers lack TTL
       // indexes; expired buckets are also ignored in code, so that only costs a little disk.)
       this.quotas.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).catch(() => undefined),
+      this.visits.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).catch(() => undefined),
+      this.visits.createIndex({ day: 1 }),
     ]);
   }
 
@@ -171,6 +176,25 @@ export class MongoStore implements Store {
       if ((err as { code?: number }).code === 11000) return null;
       throw err;
     }
+  }
+
+  async bumpVisit(day: string, visitor: string, inc: Record<string, number>, first: Record<string, string>, expiresAt: Date): Promise<void> {
+    const $inc = Object.fromEntries(Object.entries(inc).map(([k, n]) => [`counts.${k}`, n]));
+    await this.visits.updateOne(
+      { _id: `${day}:${visitor}` },
+      { $inc, $setOnInsert: { day, visitor, ref: first.ref ?? "", firstPage: first.firstPage ?? "", expiresAt } },
+      { upsert: true },
+    );
+  }
+
+  async visitsSince(day: string): Promise<VisitDay[]> {
+    const docs = await this.visits.find({ day: { $gte: day } }).toArray();
+    return docs.map(({ day, visitor, counts, ref, firstPage }) => ({ day, visitor, counts: counts ?? {}, ref, firstPage }));
+  }
+
+  async ideasSince(iso: string, limit = 5000): Promise<IdeaRecord[]> {
+    const docs = await this.ideas.find({ createdAt: { $gte: iso } }).sort({ createdAt: -1 }).limit(limit).toArray();
+    return docs.map(fromIdeaDoc);
   }
 
   async returnQuota(bucket: string): Promise<void> {

@@ -20,6 +20,8 @@ export const api = {
   submitIdea: (brief: IdeaBrief & { panelMode?: PanelMode; providers?: string[]; keyMode?: "free" | "own"; ownKeys?: { provider: string; apiKey: string; model?: string }[] }) =>
     request<{ id: string; mock: boolean; totalPersonas: number; sendPlan: SendPlan; ownerToken: string; quota: Quota }>("/ideas", { method: "POST", body: JSON.stringify(brief) }),
   getQuota: () => request<Quota>("/ideas/quota"),
+  /** Owner-only numbers, unlocked with ADMIN_TOKEN. */
+  getStats: (token: string, days = 30) => request<SiteStats>(`/admin/stats?days=${days}`, { headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` } }),
   /** Check a visitor's own key and measure its limits. The server keeps nothing. */
   checkKey: (provider: string, apiKey: string, model?: string) =>
     request<{ ok: true; provider: string; model: string; capacity: Capacity }>("/keys/check", { method: "POST", body: JSON.stringify({ provider, apiKey, model: model || undefined }) }),
@@ -75,4 +77,44 @@ export function forgetOwned(id: string) {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Tell the server a page was opened: which kind of page, and which site the visitor came from
+ * (the server keeps only that site's name). Fire-and-forget; never blocks or breaks the page.
+ */
+export function recordVisit(path: string) {
+  try {
+    void fetch("/api/visit", {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, ref: document.referrer || "" }),
+    }).catch(() => undefined);
+  } catch {
+    /* ignore */
+  }
+}
+
+export interface SiteStats {
+  days: number;
+  since: string;
+  totals: {
+    uniqueVisitors: number;
+    returningVisitors: number;
+    pageViews: number;
+    visitorsWhoRan: number;
+    runs: number;
+    freeRuns: number;
+    ownKeyRuns: number;
+    completed: number;
+    failed: number;
+    hitFreeLimit: number;
+    verdicts: { build: number; maybe: number; dont_build: number };
+  };
+  pages: { home: number; idea: number; history: number };
+  referrers: { host: string; visitors: number }[];
+  direct: number;
+  daily: { day: string; visitors: number; views: number; runs: number; freeRuns: number; ownKeyRuns: number; completed: number; failed: number; hitFreeLimit: number }[];
+  recentRuns: { id: string; title: string; createdAt: string; status: string; keyMode: string; panelMode?: string; verdict: string | null; score: number | null }[];
 }

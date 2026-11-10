@@ -10,6 +10,7 @@ import { PERSONAS, PERSONA_LIBRARY_VERSION } from "./personas.js";
 import { ideasRouter } from "./routes/ideas.js";
 import { allProviders, capacityOf, providerHealth, providerKey } from "./llm/registry.js";
 import { keysRouter } from "./routes/keys.js";
+import { adminRouter, visitRouter } from "./routes/stats.js";
 import { redactSecrets } from "./llm/redact.js";
 import type { Store } from "./store/store.js";
 
@@ -112,6 +113,8 @@ export function createApp(store: Store) {
 
   app.use("/api/ideas", ideasRouter(store));
   app.use("/api/keys", keysRouter());
+  app.use("/api/visit", visitRouter(store));
+  app.use("/api/admin", adminRouter(store));
 
   // In production (docker), serve the built client from the same origin.
   const clientDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");

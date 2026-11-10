@@ -20,7 +20,7 @@ export function visitorId(req: Request): string {
 
 export type QuotaKind = "free" | "sim" | "own";
 
-function today() {
+export function today() {
   const now = new Date();
   const day = now.toISOString().slice(0, 10); // UTC day
   const resetsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));

@@ -213,6 +213,24 @@ git push -u origin main
 - **Own key:** run once with your own key, then search Render's logs for the first few characters
   of the key. Nothing should come up.
 
+### Seeing who visits: the stats page
+
+Open `https://<your-app>.onrender.com/stats` and paste the `ADMIN_TOKEN` from Render's
+**Environment** tab (Render generated it for you). It shows, for the last 7, 30 or 90 days:
+
+- visitors, returning visitors and page views, per day
+- where visitors came from (linkedin.com, github.com, …) or direct
+- how many ran an idea, free tier vs own key, finished vs failed, and who hit the 3-a-day limit
+- the latest 50 runs with their verdicts
+
+It counts people by a one-way hash of their IP and keeps only the referring site's name, with no
+cookies and no third-party trackers, so there's nothing personal to leak and no cookie banner needed.
+Data deletes itself after 90 days. Nobody else can open it: without the token the API answers 401,
+and with `ADMIN_TOKEN` unset the page is switched off entirely (404).
+
+Other places with numbers: Render's **Metrics** tab (CPU, memory, bandwidth, and request counts),
+Render's **Logs**, and in Atlas, **Browse Collections** (the raw `ideas` and `visits` data).
+
 ### Good to know
 
 - **Sleeping.** A free Render service sleeps after 15 minutes without visitors; the next visit takes

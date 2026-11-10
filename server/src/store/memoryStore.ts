@@ -1,7 +1,7 @@
 /** In-memory Store for unit tests. Same semantics as MongoStore (idempotent upserts, success beats failure). */
 import type { IdeaRecord, IdeaStatus, PersonaFailure, PersonaVerdict, Synthesis } from "../types.js";
 import type { EvalJudgment } from "../eval/types.js";
-import { evalKey, type Store } from "./store.js";
+import { evalKey, type Store, type VisitDay } from "./store.js";
 
 export class MemoryStore implements Store {
   ideas = new Map<string, IdeaRecord>();
@@ -83,5 +83,19 @@ export class MemoryStore implements Store {
   }
   async quotaUsed(bucket: string) {
     return this.quota(bucket)?.n ?? 0;
+  }
+
+  private visits = new Map<string, VisitDay & { expiresAt: number }>();
+  async bumpVisit(day: string, visitor: string, inc: Record<string, number>, first: Record<string, string>, expiresAt: Date) {
+    const id = `${day}:${visitor}`;
+    const v = this.visits.get(id) ?? { day, visitor, counts: {}, ref: first.ref ?? "", firstPage: first.firstPage ?? "", expiresAt: expiresAt.getTime() };
+    for (const [k, n] of Object.entries(inc)) v.counts[k] = (v.counts[k] ?? 0) + n;
+    this.visits.set(id, v);
+  }
+  async visitsSince(day: string) {
+    return [...this.visits.values()].filter((v) => v.day >= day && v.expiresAt > Date.now()).map(({ expiresAt: _e, ...v }) => v);
+  }
+  async ideasSince(iso: string, limit = 5000) {
+    return [...this.ideas.values()].filter((i) => i.createdAt >= iso).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
   }
 }

@@ -449,3 +449,23 @@ textarea.field { resize: vertical; }
 .teams-row > .team { min-width: 0; margin: 0; }
 @media (max-width: 1100px) { .teams-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .teams-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- recent proposals (home page) ---------- */
+.recent { margin-top: 22px; }
+.recent-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+.recent-head h2 { margin: 0; font: 800 22px/1.2 var(--display); color: var(--ink, #f8fafc); }
+.recent-all { font: 800 14px/1.2 var(--body); color: #fbbf24; text-decoration: none; }
+.recent-all:hover { text-decoration: underline; }
+.recent-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.recent-card { display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 14px 16px; border-radius: 16px; background: #141b2d; border: 1px solid #263048; color: inherit; text-decoration: none; transition: transform 0.15s, border-color 0.15s; }
+.recent-card:hover { transform: translateY(-2px); border-color: #fbbf24; }
+.recent-card:focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+.recent-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recent-verdict { font: 900 11.5px/1 var(--body); letter-spacing: 0.03em; padding: 5px 9px; border-radius: 99px; }
+.recent-score { font: 900 18px/1 var(--display); color: #f8fafc; }
+.recent-score small { font-size: 11px; color: #94a3b8; margin-left: 1px; }
+.recent-title { font: 800 15.5px/1.3 var(--body); color: #f8fafc; overflow-wrap: anywhere; }
+.recent-desc { font: 600 13px/1.45 var(--body); color: #94a3b8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.recent-meta { margin-top: auto; font: 700 12px/1.2 var(--body); color: #64748b; }
+@media (max-width: 1100px) { .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .recent-grid { grid-template-columns: minmax(0, 1fr); } }

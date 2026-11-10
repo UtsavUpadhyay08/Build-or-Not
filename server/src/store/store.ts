@@ -37,9 +37,28 @@ export interface Store {
   returnQuota(bucket: string): Promise<void>;
   quotaUsed(bucket: string): Promise<number>;
 
+  /**
+   * Daily visit log for the owner's stats page: one document per (UTC day, hashed visitor),
+   * deleted automatically after 90 days. `inc` adds to counters (views, runs, …); `first` is
+   * written only when the document is created (where the visitor came from, first page).
+   */
+  bumpVisit(day: string, visitor: string, inc: Record<string, number>, first: Record<string, string>, expiresAt: Date): Promise<void>;
+  visitsSince(day: string): Promise<VisitDay[]>;
+  /** Ideas created at or after `iso` (newest first), for stats. */
+  ideasSince(iso: string, limit?: number): Promise<IdeaRecord[]>;
+
   close(): Promise<void>;
 }
 
 export function evalKey(j: Pick<EvalJudgment, "runId" | "condition" | "itemId" | "personaId">): string {
   return `${j.runId}:${j.condition}:${j.itemId}:${j.personaId}`;
+}
+
+/** One visitor's activity on one UTC day. The visitor is an HMAC of their IP, never the IP. */
+export interface VisitDay {
+  day: string;
+  visitor: string;
+  counts: Record<string, number>;
+  ref: string;
+  firstPage: string;
 }

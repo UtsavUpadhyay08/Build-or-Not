@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { ownKeySchema } from "./keys.js";
 import { freeKind, limitFor, quotaStatus, takeRun } from "../security/visitor.js";
 import { redactSecrets } from "../llm/redact.js";
+import { countVisit } from "./stats.js";
 import { z } from "zod";
 import { config, MOCK_MODE } from "../config.js";
 import { PERSONAS, PERSONA_LIBRARY_VERSION } from "../personas.js";
@@ -82,6 +83,7 @@ export function ideasRouter(store: Store): Router {
         const kind = freeKind();
         release = await takeRun(store, req, kind);
         if (!release) {
+          await countVisit(store, req, { capHits: 1 });
           const msg =
             kind === "free"
               ? `You've used your ${limitFor("free")} free runs for today. Paste your own API key to keep going (a free Groq key takes a minute to get), or come back after midnight UTC.`
@@ -109,6 +111,7 @@ export function ideasRouter(store: Store): Router {
           ...brief,
         };
         await store.insertIdea(idea);
+        await countVisit(store, req, { runs: 1, [keyMode === "own" ? "ownKeyRuns" : "freeRuns"]: 1 });
         startPanel(store, idea.id, brief, prepared); // fire-and-forget; client follows over SSE
         // The owner token is shown once, to the submitter: it's what lets them delete the idea later.
         res.status(201).json({ id: idea.id, mock: idea.mock, totalPersonas: PERSONAS.length, sendPlan: prepared.plan, ownerToken, quota: await quotaStatus(store, req) });
