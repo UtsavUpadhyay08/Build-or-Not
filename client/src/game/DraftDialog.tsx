@@ -28,9 +28,14 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hid
   const box = useRef<HTMLTextAreaElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
 
+  // Clear the old error only when the popup opens. (Clearing it on every re-render threw away the
+  // message the moment the request finished, so a failed click looked like nothing happened.)
+  useEffect(() => {
+    if (open) setError(null);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
-    setError(null);
     const t = setTimeout(() => box.current?.focus(), 30);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !busy) onClose();

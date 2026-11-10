@@ -46,6 +46,22 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
   const mixedOk = usable.length >= 2;
   const councilValid = council.mode === "single" ? usable.some((p) => p.key === council.single) || meta?.mock : council.mixed.length >= 2;
   const canSubmit = !locked && !submitting && !blocked && brief.title.trim() && brief.description.trim() && councilValid;
+  // Say why the button is greyed out, instead of leaving people clicking a button that does nothing.
+  const missing = locked || submitting || blocked
+    ? null
+    : !brief.title.trim() && !brief.description.trim()
+      ? "Add a name and a description first (or use “Just type your idea”)."
+      : !brief.title.trim()
+        ? "Add a name for the idea first."
+        : !brief.description.trim()
+          ? "Add a short description first."
+          : !councilValid
+            ? usable.length === 0
+              ? "No AI is working on the site right now, so the council can’t meet. Use your own key, or try again later."
+              : council.mode === "single"
+                ? "Pick which AI the council uses (under “Which AI answers”)."
+                : "Pick at least 2 AIs for a mixed council."
+            : null;
   const councilKeys = council.mode === "single" ? (council.single ? [council.single] : []) : council.mixed;
   const preview = previewPlan(meta, councilKeys, meta?.personaCount ?? 45);
 
@@ -172,6 +188,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
       </fieldset>
 
       {blocked && !error && <p className="blocked-note">{blocked}</p>}
+      {missing && !error && <p className="blocked-note">{missing}</p>}
       {error && (
         <div className="form-error" role="alert">
           {error}
