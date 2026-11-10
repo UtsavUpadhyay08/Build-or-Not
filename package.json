@@ -1,0 +1,16 @@
+{
+  "name": "idea-panel",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Submit a product/feature idea; a panel of 45 distinct AI personas independently judge it; see the aggregate verdict and where they disagree.",
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev --workspace=server\" \"npm:dev --workspace=client\"",
+    "build": "npm run build --workspace=server && npm run build --workspace=client",
+    "start": "npm run start --workspace=server",
+    "test": "npm run test --workspace=server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

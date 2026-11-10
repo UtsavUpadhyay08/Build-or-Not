@@ -1,0 +1,28 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    profiles: ["app"] # `docker compose up -d mongo` for dev; `docker compose --profile app up --build` for everything
+    ports:
+      - "4100:4100"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/idea-panel
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
