@@ -9,7 +9,7 @@ import { ReviewPanel } from "./ReviewPanel";
 import { Results } from "./Results";
 import { Village } from "./Village";
 import { VSTYLE, explainFailure, planFromServer, sortByArrival, splitName, toV, type Stage, type V } from "./model";
-import { KeysPanel, loadRememberedKeys, type KeyMode } from "./KeysPanel";
+import { RunOptions, loadRememberedKeys, type KeyMode } from "./RunOptions";
 
 const EMPTY_BRIEF: IdeaBrief = {
   title: "",
@@ -378,7 +378,7 @@ export function GamePage() {
                     : null
               }
               keysSlot={
-                <KeysPanel
+                <RunOptions
                   meta={meta}
                   quota={quota}
                   keyMode={keyMode}

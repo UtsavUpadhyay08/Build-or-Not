@@ -55,7 +55,7 @@ interface Props {
  * How this visitor's run is paid for: the site's free tier (a few runs a day), or their own key.
  * Own keys stay in this browser. They're sent with this visitor's runs only, and the server keeps none.
  */
-export function KeysPanel({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys, locked }: Props) {
+export function RunOptions({ meta, quota, keyMode, onKeyMode, ownKeys, onOwnKeys, locked }: Props) {
   const [provider, setProvider] = useState("groq");
   const [key, setKey] = useState("");
   const [remember, setRemember] = useState(() => loadRememberedKeys().length > 0);

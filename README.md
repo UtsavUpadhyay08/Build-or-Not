@@ -2,7 +2,6 @@
 
 **45 AI personas judge your startup idea, each on its own, and show you where they disagree.**
 
-<!-- SCREENSHOT 1 (hero): the home page with the proposal form and the village. Save as docs/screenshots/hero.png -->
 ![Build or Not: the proposal form next to the village of 45 personas](docs/screenshots/hero.png)
 
 ## What it is
@@ -17,12 +16,37 @@ measures whether 45 independent judges actually predict better than a single pro
 
 ## How it looks
 
-| | |
-|---|---|
-| <!-- SCREENSHOT 2: mid-run, characters walking to BUILD / MAYBE / DON'T BUILD. Save as docs/screenshots/council.png --> ![The council deliberating in the village square](docs/screenshots/council.png) | <!-- SCREENSHOT 3: a character clicked, showing their review. Save as docs/screenshots/review.png --> ![One persona's review](docs/screenshots/review.png) |
-| **The council meets.** On submit, everyone walks to the square. As each verdict arrives, that character walks to their side. | **Every voice is readable.** Click anyone for their score, reasoning, top concern and what they liked. |
-| <!-- SCREENSHOT 4: the results section (score ring, verdict, the numbers). Save as docs/screenshots/results.png --> ![Results: verdict, score and disagreement metrics](docs/screenshots/results.png) | <!-- SCREENSHOT 5: the "How to run it" box (free tier vs own key). Save as docs/screenshots/keys.png --> ![Free tier or your own API key](docs/screenshots/keys.png) |
-| **Results that show disagreement.** Overall score, score spread, verdict entropy, recurring concerns, and scores by persona group and by model. | **Free tier or your own key.** 3 free runs a day, or paste your own key (used only for your run, never stored). |
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/council.png" alt="The council deliberating: characters walking to Build, Maybe and Don't build as verdicts arrive"></td>
+    <td width="50%"><img src="docs/screenshots/review.png" alt="Clicking a persona shows their verdict, score and short take"></td>
+  </tr>
+  <tr>
+    <td><b>The council meets.</b> On submit, everyone walks to the square. As each verdict arrives, that character walks to their side.</td>
+    <td><b>Every voice is readable.</b> Click anyone for their verdict and short take, then their full review.</td>
+  </tr>
+</table>
+
+![Results: overall score, verdict split, summary and the disagreement numbers](docs/screenshots/results.png)
+
+**Results that show disagreement:** overall score, agreement, score spread, verdict entropy and
+confidence, plus recurring concerns, scores by persona group and by model, and every individual score.
+
+<table>
+  <tr>
+    <td width="38%"><img src="docs/screenshots/keys.png" alt="How to run it: the free tier, or your own API key with its measured limits"></td>
+    <td>
+      <b>Free tier or your own key.</b><br><br>
+      Every visitor gets 3 free runs a day on the site's key. Or paste your own key: it's used only for
+      your run and never stored.<br><br>
+      Either way the app reads the key's real rate limits first. A free Groq key allows 8,000 tokens a
+      minute, so the council sends 6 questions at once and paces the rest instead of hitting a wall of
+      rate-limit errors.
+    </td>
+  </tr>
+</table>
+
+<sub>Screenshots are from a demo run with simulated answers.</sub>
 
 ## How it works
 

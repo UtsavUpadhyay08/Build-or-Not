@@ -43,7 +43,7 @@ export function createApp(store: Store) {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], // React/recharts set inline styles
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], // React sets inline styles
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
           imgSrc: ["'self'", "data:"],
           connectSrc: ["'self'"],

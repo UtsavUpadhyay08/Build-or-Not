@@ -40,7 +40,7 @@ export class MongoStore implements Store {
   static async connect(uri: string): Promise<MongoStore> {
     const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
     await client.connect();
-    const db: Db = client.db(); // database name comes from the URI path (default "idea-panel")
+    const db: Db = client.db(); // database name comes from the URI path (default "build-or-not")
     const store = new MongoStore(
       client,
       db.collection<IdeaDoc>("ideas"),

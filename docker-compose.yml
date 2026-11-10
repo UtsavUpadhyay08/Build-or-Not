@@ -19,7 +19,7 @@ services:
       - path: .env
         required: false
     environment:
-      MONGODB_URI: mongodb://mongo:27017/idea-panel
+      MONGODB_URI: mongodb://mongo:27017/build-or-not
     depends_on:
       mongo:
         condition: service_healthy

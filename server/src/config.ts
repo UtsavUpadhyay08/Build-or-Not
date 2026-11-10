@@ -131,7 +131,7 @@ const mockProviders: ProviderConfig[] = ["mock-a", "mock-b", "mock-c"].map((mode
 
 export const config = {
   port: num("PORT", 4100),
-  mongoUri: str("MONGODB_URI", "mongodb://127.0.0.1:27017/idea-panel"),
+  mongoUri: str("MONGODB_URI", "mongodb://127.0.0.1:27017/build-or-not"),
 
   providers: (MOCK_MODE ? mockProviders : [...envProviders]) as ProviderConfig[],
   /** "single": every persona uses one provider. "mixed": personas are spread round-robin across all configured providers. */

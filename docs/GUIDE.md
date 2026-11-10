@@ -38,7 +38,7 @@ One page, three parts:
 
 ## Stack
 
-Node.js + Express + TypeScript · MongoDB · React + Vite + recharts · Vitest · Docker Compose · GitHub Actions
+Node.js + Express + TypeScript · MongoDB · React + Vite · Vitest · Docker Compose · GitHub Actions
 
 ## Quick start
 
@@ -141,7 +141,7 @@ with no extra calls), and threats to validity.
 
 ```bash
 npm test                                                             # unit tests
-MONGODB_TEST_URI=mongodb://127.0.0.1:27017/idea-panel-test npm test  # + 4 MongoDB integration tests
+MONGODB_TEST_URI=mongodb://127.0.0.1:27017/build-or-not-test npm test  # + 4 MongoDB integration tests
 ```
 
 CI runs both against a Mongo service container, then builds the Docker image.
@@ -229,13 +229,21 @@ git push -u origin main
 
 ```
 server/src/
-  core/        tokenBucket · workerPool · retry           (no deps, fully unit-tested)
-  llm/         providers (Anthropic/OpenAI/Gemini/Groq/OpenRouter/mock over fetch) · managed (bucket+retry)
-               capacity (measure each key, size the run) · keyCheck
-               structured (zod validate + re-ask) · registry (single/mixed assignment) · pricing
-  panel/       prompts · judge · aggregate (verdict + disagreement math) · runPanel · service
-  store/       Store interface · MongoStore · MemoryStore (tests)
-  eval/        datasets · runEval · metrics · report · cli
-  routes/      ideas (REST + SSE) · keys (paste a key on the page)
-client/src/    form, live progress, dashboard, disagreement panel, persona grid
+  index.ts       startup: key checks, measuring keys, resume interrupted runs
+  app.ts         Express app: security headers, rate limits, routes
+  config.ts      every setting, read from the environment
+  personas.ts    the 45 personas
+  core/          tokenBucket · workerPool · retry            (no dependencies, fully unit-tested)
+  llm/           providers (Anthropic, OpenAI, Gemini, Groq, OpenRouter, OpenCode, mock)
+                 managed (rate limit + retry + circuit breaker) · registry (councils, own-key councils)
+                 capacity (measure a key, size the run) · keyCheck · structured (zod + re-ask) · redact
+  panel/         prompts · judge · aggregate (verdict + disagreement math) · runPanel · service
+  routes/        ideas (REST + live progress over SSE, daily limits) · keys (check a visitor's key)
+  security/      visitor (hashed IP, daily limits) · security tests
+  store/         Store interface · MongoStore · MemoryStore (tests)
+  eval/          datasets · runEval · metrics · report · cli
+client/src/
+  game/          GamePage · Village · ProposalForm · ProposalSummary · RunOptions · ReviewPanel · Results
+  history/       HistoryPage (every proposal; delete your own)
+  api.ts · types.ts · exportMarkdown.ts
 ```

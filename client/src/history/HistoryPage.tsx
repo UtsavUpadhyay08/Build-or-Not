@@ -1,10 +1,35 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, forgetOwned, ownerTokenFor } from "../api";
-import type { IdeaRecord, Synthesis } from "../types";
-import { VerdictPill } from "./VerdictPill";
+import type { IdeaRecord, Synthesis, Verdict } from "../types";
 
-export function HistoryList() {
+/** Every proposal anyone has submitted (ideas are public). Only this browser's own can be deleted. */
+export function HistoryPage() {
+  return (
+    <div className="shell">
+      <header className="topbar">
+        <Link to="/" className="brand">
+          <span className="brand-mark">BN</span>
+          <span>Build or Not</span>
+        </Link>
+        <Link to="/" className="topbar-sub">
+          ← Back to the village
+        </Link>
+      </header>
+      <main className="main">
+        <HistoryList />
+      </main>
+    </div>
+  );
+}
+
+const VERDICT: Record<Verdict, { label: string; tone: string }> = {
+  build: { label: "Build", tone: "ok" },
+  maybe: { label: "Maybe", tone: "warn" },
+  dont_build: { label: "Don’t build", tone: "danger" },
+};
+
+function HistoryList() {
   const [items, setItems] = useState<{ idea: IdeaRecord; synthesis: Synthesis | null }[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +80,7 @@ export function HistoryList() {
               <td>
                 <span className={`pill ${idea.status === "completed" ? "ok" : idea.status === "failed" ? "danger" : "warn"}`}>{idea.status}</span>
               </td>
-              <td>{synthesis ? <VerdictPill verdict={synthesis.overallVerdict} /> : "—"}</td>
+              <td>{synthesis ? <span className={`pill ${VERDICT[synthesis.overallVerdict].tone}`}>{VERDICT[synthesis.overallVerdict].label}</span> : "—"}</td>
               <td>{synthesis ? `${synthesis.overallScore}/100` : "—"}</td>
               <td>
                 {ownerTokenFor(idea.id) && idea.status !== "running" ? (

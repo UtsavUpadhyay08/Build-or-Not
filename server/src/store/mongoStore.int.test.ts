@@ -1,6 +1,6 @@
 /**
  * Integration test against a real MongoDB. Skipped unless MONGODB_TEST_URI is set, e.g.
- *   MONGODB_TEST_URI=mongodb://127.0.0.1:27017/idea-panel-test npm test
+ *   MONGODB_TEST_URI=mongodb://127.0.0.1:27017/build-or-not-test npm test
  * (CI sets it via a mongo service container.)
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";

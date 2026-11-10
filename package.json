@@ -1,5 +1,5 @@
 {
-  "name": "idea-panel",
+  "name": "build-or-not",
   "private": true,
   "version": "1.0.0",
   "description": "Submit a product/feature idea; a panel of 45 distinct AI personas independently judge it; see the aggregate verdict and where they disagree.",
