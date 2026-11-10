@@ -44,7 +44,8 @@ export function GamePage() {
   const [keyMode, setKeyMode] = useState<KeyMode>(() => (loadRememberedKeys().length ? "own" : "free"));
   const [quota, setQuota] = useState<Quota | null>(null);
   const pendingSelect = useRef<string | undefined>(undefined);
-  const [draftOpen, setDraftOpen] = useState(false);
+  // The "just type your idea" popup opens by itself on the home page, unless the visitor opted out.
+  const [draftOpen, setDraftOpen] = useState(() => !id && !quickStartDismissed());
   const currentBrief = brief;
   const [idea, setIdea] = useState<IdeaRecord | null>(null);
   const [verdicts, setVerdicts] = useState<Map<string, PersonaVerdict>>(new Map());
@@ -514,6 +515,8 @@ export function GamePage() {
       <DraftDialog
         open={draftOpen}
         onClose={() => setDraftOpen(false)}
+        hideNextTime={quickStartDismissed()}
+        onHideNextTime={setQuickStartDismissed}
         draft={draftIdea}
         source={draftSource}
         blocked={runBlocked}
@@ -526,6 +529,23 @@ export function GamePage() {
       <footer className="g-wrap g-foot muted">These answers come from AI personas. Treat them as a second opinion, not a promise.</footer>
     </div>
   );
+}
+
+const QUICK_OFF = "bon.quickstart.off";
+function quickStartDismissed(): boolean {
+  try {
+    return localStorage.getItem(QUICK_OFF) === "1";
+  } catch {
+    return false;
+  }
+}
+function setQuickStartDismissed(off: boolean) {
+  try {
+    if (off) localStorage.setItem(QUICK_OFF, "1");
+    else localStorage.removeItem(QUICK_OFF);
+  } catch {
+    /* storage blocked: it just shows again next time */
+  }
 }
 
 /** True below the given viewport width (phones / small tablets). */

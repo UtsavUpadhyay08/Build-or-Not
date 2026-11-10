@@ -12,12 +12,16 @@ interface Props {
   source: string;
   /** Why it can't run right now (no free runs left, no key yet), if it can't. */
   blocked: string | null;
+  /** "Don't show this again" (the popup opens by itself on the home page otherwise). */
+  hideNextTime?: boolean;
+  onHideNextTime?: (off: boolean) => void;
 }
 
 const EXAMPLES = ["An app that splits rent and bills between flatmates automatically", "A Chrome extension that summarises long Slack threads", "Weekend cooking classes taught by home cooks"];
 
 /** The "just tell me your idea" popup: one box, then the AI fills in everything else. */
-export function DraftDialog({ open, onClose, draft, onDone, source, blocked }: Props) {
+export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hideNextTime, onHideNextTime }: Props) {
+  const [hide, setHide] = useState(!!hideNextTime);
   const [idea, setIdea] = useState("");
   const [busy, setBusy] = useState<null | "fill" | "run">(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +114,12 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked }: P
           </button>
         </div>
         {busy && <p className="draft-wait" aria-live="polite">AI is filling in the form. This takes a few seconds.</p>}
+        {onHideNextTime && (
+          <label className="draft-hide">
+            <input type="checkbox" checked={hide} onChange={(e) => (setHide(e.target.checked), onHideNextTime(e.target.checked))} />
+            <span>Don’t open this by itself next time</span>
+          </label>
+        )}
       </div>
     </div>
   );
