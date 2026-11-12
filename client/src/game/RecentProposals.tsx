@@ -51,11 +51,12 @@ export function RecentProposals({ limit = 6 }: { limit?: number }) {
                   </span>
                 </span>
                 <strong className="recent-title">{idea.title}</strong>
+                {idea.kind === "feature" && <span className="hist-kind">New feature</span>}
                 <span className="recent-desc">{idea.description}</span>
                 <span className="recent-meta">
                   {ago(idea.createdAt)}
                   {idea.mock ? " · simulated AI" : ""}
-                  {ownerTokenFor(idea.id) ? " · yours" : ""}
+                  {idea.yours || ownerTokenFor(idea.id) ? " · yours" : ""}
                 </span>
               </Link>
             </li>

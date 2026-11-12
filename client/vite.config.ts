@@ -6,7 +6,9 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      "/api": "http://localhost:4100",
+      // Keep the browser's Host (localhost:5174): sign-in redirects and the CSRF origin check use it.
+      // (The string shorthand would rewrite it to localhost:4100.)
+      "/api": { target: "http://localhost:4100", changeOrigin: false },
     },
   },
 });

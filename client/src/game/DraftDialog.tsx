@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { IdeaBrief } from "../types";
+import { KindPick, PrivacyToggle, ProductBox, loadSavedProduct } from "./ProposalForm";
 
 interface Props {
   open: boolean;
@@ -15,12 +16,20 @@ interface Props {
   /** "Don't show this again" (the popup opens by itself on the home page otherwise). */
   hideNextTime?: boolean;
   onHideNextTime?: (off: boolean) => void;
+  /** Feature mode: the product's name — the AI drafts the feature against its description. */
+  featureOf?: string | null;
+  /** The startup/feature choice, product description and privacy, shared with the form. */
+  settings: Pick<IdeaBrief, "kind" | "productContext" | "hidden">;
+  onSettings: (patch: Partial<Pick<IdeaBrief, "kind" | "productContext" | "hidden">>) => void;
 }
 
 const EXAMPLES = ["An app that splits rent and bills between flatmates automatically", "A Chrome extension that summarises long Slack threads", "Weekend cooking classes taught by home cooks"];
 
 /** The "just tell me your idea" popup: one box, then the AI fills in everything else. */
-export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hideNextTime, onHideNextTime }: Props) {
+export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hideNextTime, onHideNextTime, featureOf, settings, onSettings }: Props) {
+  const feature = settings.kind === "feature";
+  const product = settings.productContext ?? "";
+  const productReady = !feature || product.trim().length >= 40;
   const [hide, setHide] = useState(!!hideNextTime);
   const [idea, setIdea] = useState("");
   const [busy, setBusy] = useState<null | "fill" | "run">(null);
@@ -41,7 +50,7 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hid
       if (e.key === "Escape" && !busy) onClose();
       if (e.key === "Tab" && dialog.current) {
         // Keep keyboard focus inside the popup.
-        const f = [...dialog.current.querySelectorAll<HTMLElement>("button, textarea, [href]")].filter((el) => !el.hasAttribute("disabled"));
+        const f = [...dialog.current.querySelectorAll<HTMLElement>("button, textarea, input, [href]")].filter((el) => !el.hasAttribute("disabled"));
         if (!f.length) return;
         const first = f[0];
         const last = f[f.length - 1];
@@ -69,7 +78,7 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hid
     }
   }
 
-  const ready = idea.trim().length >= 3 && !busy;
+  const ready = idea.trim().length >= 3 && !busy && productReady;
 
   return (
     <div className="draft-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
@@ -78,10 +87,13 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hid
           ×
         </button>
         <div className="eyebrow">QUICK START</div>
-        <h2 id="draft-h">What’s your idea?</h2>
+        <h2 id="draft-h">{feature ? "What’s the feature?" : "What’s your idea?"}</h2>
         <p id="draft-sub" className="draft-sub">
           One or two sentences is enough. AI fills in the rest of the form for you, then the council votes on it.
         </p>
+        <KindPick feature={feature} locked={!!busy} onStartup={() => onSettings({ kind: "startup" })} onFeature={() => onSettings({ kind: "feature", productContext: product || loadSavedProduct() })} />
+        {feature && <ProductBox value={product} locked={!!busy} onChange={(v) => onSettings({ productContext: v })} />}
+        {featureOf && <p className="draft-feature-note">Drafting a new feature for <strong>{featureOf}</strong>. The AI reads your product description too.</p>}
         <textarea
           ref={box}
           className="field draft-box"
@@ -91,10 +103,10 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hid
           disabled={!!busy}
           onChange={(e) => setIdea(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && ready && go(true)}
-          placeholder="e.g. An app that splits rent and bills between flatmates automatically"
+          placeholder={feature ? "e.g. Settle up automatically when a flatmate moves out" : "e.g. An app that splits rent and bills between flatmates automatically"}
           aria-label="Your idea"
         />
-        {!idea && (
+        {!idea && !feature && (
           <div className="draft-examples" aria-label="Examples">
             {EXAMPLES.map((x) => (
               <button key={x} type="button" className="draft-chip" onClick={() => setIdea(x)}>
@@ -103,7 +115,9 @@ export function DraftDialog({ open, onClose, draft, onDone, source, blocked, hid
             ))}
           </div>
         )}
+        <PrivacyToggle hidden={!!settings.hidden} locked={!!busy} onChange={(h) => onSettings({ hidden: h })} />
         <p className="draft-source">This uses {source}.</p>
+        {feature && !productReady && <p className="blocked-note">Add your product’s description above first (upload its description.md, or paste a few lines).</p>}
         {blocked && <p className="blocked-note">{blocked} You can still fill in the form.</p>}
         {error && (
           <div className="form-error" role="alert">

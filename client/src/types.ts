@@ -29,7 +29,19 @@ export interface IdeaBrief {
   pricingModel: string;
   competitors: string;
   sliders: IdeaSliders;
+  /** "startup": a new product. "feature": a new feature for a product that already exists. */
+  kind?: IdeaKind;
+  /** Feature mode: the existing product, usually from its description.md. */
+  productContext?: string;
+  /** Private run: hidden from all public lists; only its owner (account or owner token) can open it. */
+  hidden?: boolean;
+  /** Set by the server only when the viewer owns this run. */
+  yours?: boolean;
 }
+
+export type IdeaKind = "startup" | "feature";
+/** Same cap as the server: every persona reads the product description. */
+export const PRODUCT_CONTEXT_MAX = 6000;
 
 export type IdeaStatus = "running" | "completed" | "failed";
 
@@ -96,7 +108,23 @@ export interface PersonaVerdict extends CallMeta {
   reasoning: string;
   topConcern: string;
   topAppeal: string;
+  /** The smallest change that would raise this persona's score, in their words. "" on old runs. */
+  fix?: string;
   createdAt: string;
+}
+
+/** One grouped change from "Fix my idea with AI". Weight = sum of (11 - score) over its personas. */
+export interface ImproveChange {
+  title: string;
+  detail: string;
+  personaIds: string[];
+  weight: number;
+}
+
+export interface ImprovePlan {
+  keep: string;
+  changes: ImproveChange[];
+  revised: IdeaBrief;
 }
 
 export interface ThemeCluster {

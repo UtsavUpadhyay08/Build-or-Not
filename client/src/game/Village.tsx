@@ -1,7 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PersonaMeta } from "../types";
 import { DISTRICTS, VSTYLE, districtOf, skinFor, splitName, type Stage, type V } from "./model";
-import { H, PATCHES, ROADS, TREES, W, computeGatherSpots, computeHomes, computeZoneSpots } from "./layout";
+import { computeGatherSpots, computeHomes, computeZoneSpots, districtPos, roadsFor, shapeSpec, type Shape } from "./layout";
 
 export interface VillageProps {
   personas: PersonaMeta[];
@@ -15,6 +15,18 @@ export interface VillageProps {
   bubble?: ReactNode;
   banner?: { word: string; score: number | string; color: string } | null;
   ideaLabel: string;
+  /**
+   * Phones: show the selected person's card as a sheet pinned to the bottom of the screen instead of
+   * a bubble inside the village. Inside the sideways-scrolling village the bubble could end up half
+   * off-screen, with its Close button out of reach.
+   */
+  sheet?: boolean;
+  /** Close the selected person's card (sheet backdrop, Escape). */
+  onDismiss?: () => void;
+  /** Phones: offer a full-screen view of the village. */
+  expandable?: boolean;
+  /** "tall" lays the village out for a phone held upright; default is the original wide one. */
+  shape?: Shape;
 }
 
 /**
@@ -23,15 +35,24 @@ export interface VillageProps {
  * starting centred on the council square.
  */
 const MIN_SCALE = 0.62;
-function useFitScale() {
+/** The tall (phone) village is made to fit the width, so it may go a little smaller. */
+const MIN_SCALE_TALL = 0.45;
+function useFitScale(fitHeight: boolean, W: number, H: number, minScale: number) {
   const ref = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.75);
   const centred = useRef(false);
+  // Full screen: fit the height as well, so the whole village shows when the phone is sideways.
+  const fitH = useRef(fitHeight);
+  fitH.current = fitHeight;
+  useLayoutEffect(() => {
+    centred.current = false; // re-centre on the square after entering or leaving full screen
+  }, [fitHeight]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const update = () => {
-      const s = Math.max(MIN_SCALE, Math.min(1, el.clientWidth / W));
+      const byH = fitH.current && el.clientHeight > 0 ? el.clientHeight / H : Infinity;
+      const s = Math.max(minScale, Math.min(1, el.clientWidth / W, byH));
       setScale(s);
       if (!centred.current && W * s > el.clientWidth) {
         el.scrollLeft = (W * s - el.clientWidth) / 2;
@@ -42,16 +63,46 @@ function useFitScale() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [W, H, minScale]);
+  useLayoutEffect(() => {
+    centred.current = false; // the village changed shape (phone turned): centre again
+  }, [W, H]);
   return { ref, scale };
 }
 
-export function Village({ personas, stage, arrival, verdictOf, selectedId, onPick, bubble, banner, ideaLabel }: VillageProps) {
-  const { ref, scale } = useFitScale();
-  const homes = useMemo(() => computeHomes(personas), [personas]);
-  const gather = useMemo(() => computeGatherSpots(homes), [homes]);
+export function Village({ personas, stage, arrival, verdictOf, selectedId, onPick, bubble, banner, ideaLabel, sheet = false, onDismiss, expandable = false, shape = "wide" }: VillageProps) {
+  const [expanded, setExpanded] = useState(false);
+  const spec = shapeSpec(shape);
+  const W = spec.w;
+  const H = spec.h;
+  const { ref, scale } = useFitScale(expanded, W, H, shape === "tall" ? MIN_SCALE_TALL : MIN_SCALE);
+  const roads = useMemo(() => roadsFor(shape), [shape]);
+  // Full screen: lock page scrolling behind it, Escape leaves (or first closes an open card).
+  useEffect(() => {
+    if (!expanded) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [expanded]);
+  useEffect(() => {
+    if (!expanded && !(sheet && bubble)) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (sheet && bubble) onDismiss?.();
+      else setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, sheet, bubble, onDismiss]);
+  useEffect(() => {
+    if (!expandable) setExpanded(false);
+  }, [expandable]);
+  const homes = useMemo(() => computeHomes(personas, shape), [personas, shape]);
+  const gather = useMemo(() => computeGatherSpots(homes, shape), [homes, shape]);
   const arrivalRank = useMemo(() => new Map(arrival.map((id, k) => [id, k])), [arrival]);
-  const { spots, counts } = useMemo(() => computeZoneSpots(arrival, verdictOf), [arrival, verdictOf]);
+  const { spots, counts } = useMemo(() => computeZoneSpots(arrival, verdictOf, shape), [arrival, verdictOf, shape]);
   const showSides = stage === "deciding" || stage === "result" || stage === "failed";
   const out = stage !== "idle";
 
@@ -104,16 +155,28 @@ export function Village({ personas, stage, arrival, verdictOf, selectedId, onPic
   const tint = { idle: "rgba(255,255,255,0)", assembly: "rgba(255,170,80,0.08)", thinking: "rgba(255,150,60,0.13)", deciding: "rgba(255,130,50,0.16)", result: "rgba(90,60,160,0.12)", failed: "rgba(60,60,90,0.18)" }[stage];
 
   return (
-    <div className="village-frame">
+    <div className={`village-frame ${expanded ? "expanded" : ""}`}>
+      {expandable && (
+        <button type="button" className="v-expand" onClick={() => setExpanded((x) => !x)} aria-label={expanded ? "Exit full screen" : "Show the village full screen"} aria-pressed={expanded}>
+          {expanded ? (
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /></svg>
+          ) : (
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+          )}
+        </button>
+      )}
+      {expanded && <p className="v-expand-hint">Turn your phone sideways for a bigger view.</p>}
       <div ref={ref} className="village-scroll">
       <div className="village-fit" style={{ width: W * scale, height: H * scale }}>
-        <div className="village" style={{ transform: `scale(${scale})` }}>
-          {PATCHES.map((g, k) => (
+        <div className="village" style={{ width: W, height: H, transform: `scale(${scale})` }}>
+          {spec.patches.map((g, k) => (
             <div key={k} aria-hidden="true" className="v-abs" style={{ left: g.x, top: g.y, width: g.w, height: g.h, borderRadius: "50%", background: g.c }} />
           ))}
-          {ROADS.map((r, k) => (
+          {roads.map((r, k) => (
             <div key={k} aria-hidden="true" className="v-road" style={{ left: r.x, top: r.y, width: r.len, transform: `rotate(${r.deg}deg)` }} />
           ))}
+          {/* The square and what's on it, drawn in wide coordinates and moved into place as one. */}
+          <div className="v-abs v-square" style={{ left: spec.dx, top: spec.dy }}>
           <div aria-hidden="true" className="v-abs v-plaza-rim" />
           <div aria-hidden="true" className="v-abs v-plaza" />
 
@@ -143,8 +206,9 @@ export function Village({ personas, stage, arrival, verdictOf, selectedId, onPic
               <div className="v-abs v-idle-sub">Describe your idea to call them to the square.</div>
             </>
           )}
+          </div>
 
-          {TREES.map((t, k) => (
+          {spec.trees.map((t, k) => (
             <div key={k} aria-hidden="true" className="v-abs" style={{ left: t.x, top: t.y, width: t.s, height: t.s }}>
               <div className="v-trunk" />
               <div className="v-crown" />
@@ -152,7 +216,7 @@ export function Village({ personas, stage, arrival, verdictOf, selectedId, onPic
           ))}
 
           {DISTRICTS.map((d) => (
-            <div key={d.category} className="v-abs v-district" style={{ left: d.x, top: d.y }}>
+            <div key={d.category} className="v-abs v-district" style={districtStyle(d.category, shape)}>
               <span aria-hidden="true" className="v-district-dot" style={{ background: d.color }} />
               <span>{d.label}</span>
             </div>
@@ -208,7 +272,7 @@ export function Village({ personas, stage, arrival, verdictOf, selectedId, onPic
           ))}
 
           {banner && (stage === "result" || stage === "failed") && (
-            <div className="v-banner" role="status">
+            <div className="v-banner" role="status" style={{ left: 640 + spec.dx, top: 372 + spec.dy }}>
               <span style={{ color: banner.color }}>{banner.word}</span>
               <span className="v-banner-score">
                 {banner.score}
@@ -218,13 +282,24 @@ export function Village({ personas, stage, arrival, verdictOf, selectedId, onPic
           )}
         </div>
 
-        {bubble && bubblePos && (
+        {bubble && bubblePos && !sheet && (
           <div className={`v-bubble ${bubblePos.flip ? "below" : ""}`} style={{ left: bubblePos.x, top: bubblePos.flip ? (sel!.pos.y + 6) * scale : bubblePos.y }}>
             {bubble}
           </div>
         )}
       </div>
       </div>
+      {sheet && bubble && (
+        <>
+          <div className="sheet-backdrop v-sheet-backdrop" onClick={onDismiss} aria-hidden="true" />
+          <div className="v-bubble-sheet">{bubble}</div>
+        </>
+      )}
     </div>
   );
+}
+
+function districtStyle(category: string, shape: Shape) {
+  const at = districtPos(category, shape);
+  return { left: at.x, top: at.y };
 }

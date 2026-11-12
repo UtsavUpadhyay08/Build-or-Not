@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { api, rememberOwned } from "../api";
+import { api, ownerTokenFor, rememberOwned } from "../api";
+import { AccountButton, useAuth } from "../auth";
 import { ideaToMarkdown } from "../exportMarkdown";
 import type { ApiMeta, IdeaBrief, IdeaRecord, OwnKey, PersonaFailure, PersonaVerdict, Quota, Synthesis } from "../types";
 import { ProposalForm, type Council } from "./ProposalForm";
@@ -8,10 +9,11 @@ import { ProposalSummary } from "./ProposalSummary";
 import { ReviewPanel } from "./ReviewPanel";
 import { Results } from "./Results";
 import { Village } from "./Village";
-import { VSTYLE, explainFailure, planFromServer, sortByArrival, splitName, toV, type Stage, type V } from "./model";
+import { productName, VSTYLE, explainFailure, planFromServer, sortByArrival, splitName, toV, type Stage, type V } from "./model";
 import { RunOptions, loadRememberedKeys, type KeyMode } from "./RunOptions";
 import { RecentProposals } from "./RecentProposals";
 import { DraftDialog } from "./DraftDialog";
+import { FixNudge } from "./FixNudge";
 
 const EMPTY_BRIEF: IdeaBrief = {
   title: "",
@@ -20,6 +22,9 @@ const EMPTY_BRIEF: IdeaBrief = {
   pricingModel: "",
   competitors: "",
   sliders: { reach: 5, buildCost: 5, userImportance: 5, complexity: 5, value: 5, risk: 5 },
+  kind: "startup",
+  productContext: "",
+  hidden: false,
 };
 const ASSEMBLY_MS = 2400;
 const STEPS: [Stage, string][] = [
@@ -37,7 +42,15 @@ export function GamePage() {
   const fresh = (location.state as { fresh?: boolean } | null)?.fresh ?? false;
 
   const [meta, setMeta] = useState<ApiMeta | null>(null);
-  const [brief, setBrief] = useState<IdeaBrief>(EMPTY_BRIEF);
+  // A form saved just before leaving to sign in with Google/GitHub comes back here.
+  const [restored] = useState(() => readPendingBrief());
+  // Cleared after mounting, not while reading: React may run the initializer twice in development.
+  useEffect(() => clearPendingBrief(), []);
+  const [brief, setBrief] = useState<IdeaBrief>(restored ?? EMPTY_BRIEF);
+  const auth = useAuth();
+  const briefRef = useRef(brief);
+  briefRef.current = brief;
+  useEffect(() => auth.beforeLeave(() => savePendingBrief(briefRef.current)), [auth.beforeLeave]);
   const [council, setCouncil] = useState<Council>({ mode: "single", single: "", mixed: [] });
   // How the run is paid for. A visitor's own keys live only in this tab (and localStorage if they opt in).
   const [ownKeys, setOwnKeys] = useState<OwnKey[]>(() => loadRememberedKeys());
@@ -45,9 +58,16 @@ export function GamePage() {
   const [quota, setQuota] = useState<Quota | null>(null);
   const pendingSelect = useRef<string | undefined>(undefined);
   // The "just type your idea" popup opens by itself on the home page, unless the visitor opted out.
-  const [draftOpen, setDraftOpen] = useState(() => !id && !quickStartDismissed());
+  const [draftOpen, setDraftOpen] = useState(() => !id && !quickStartDismissed() && !restored);
   const currentBrief = brief;
   const [idea, setIdea] = useState<IdeaRecord | null>(null);
+  // "Fix my idea": the corner button bumps this; the results card scrolls into view and starts.
+  const [fixSignal, setFixSignal] = useState(0);
+  const [fixReady, setFixReady] = useState(false);
+  useEffect(() => {
+    setFixSignal(0);
+    setFixReady(false);
+  }, [id]);
   const [verdicts, setVerdicts] = useState<Map<string, PersonaVerdict>>(new Map());
   const [failures, setFailures] = useState<Map<string, PersonaFailure>>(new Map());
   const [synthesis, setSynthesis] = useState<Synthesis | null>(null);
@@ -63,6 +83,7 @@ export function GamePage() {
   const villageRef = useRef<HTMLElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const narrow = useNarrow(760);
+  const phone = useNarrow(PHONE_QUERY);
 
   // ---- metadata (personas + the site's providers + limits)
   const loadMeta = useCallback(async () => {
@@ -132,8 +153,8 @@ export function GamePage() {
       .getIdea(id)
       .then((state) => {
         setIdea(state.idea);
-        const { sliders, title, description, targetAudience, pricingModel, competitors } = state.idea;
-        setBrief({ title, description, targetAudience, pricingModel, competitors, sliders });
+        const { sliders, title, description, targetAudience, pricingModel, competitors, kind = "startup", productContext = "", hidden = false } = state.idea;
+        setBrief({ title, description, targetAudience, pricingModel, competitors, sliders, kind, productContext, hidden });
         setVerdicts(new Map(state.verdicts.map((v) => [v.personaId, v])));
         setFailures(new Map(state.failures.map((f) => [f.personaId, f])));
         setSynthesis(state.synthesis);
@@ -177,7 +198,8 @@ export function GamePage() {
           },
         });
       })
-      .catch((e) => setRunError(e.message === "not found" ? "No proposal with that id." : e.message));
+      // A private run looks exactly like a missing one to anyone but its owner (the server says "not found" for both).
+      .catch((e) => setRunError(e.message === "not found" ? "NOT_FOUND" : e.message));
     return () => {
       if (timer) clearTimeout(timer);
       unsub.current?.();
@@ -221,11 +243,23 @@ export function GamePage() {
       setQuota(res.quota);
       navigate(`/ideas/${res.id}`, { state: { fresh: true } });
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/sign in to keep/i.test(msg)) {
+        // Private run without an account (or the session ran out): sign in, then send it again.
+        auth.openSignIn({ reason: "Sign in to keep this run private. Your idea stays as it is.", onDone: () => void submit(brief) });
+      } else {
+        setFormError(msg);
+      }
       void loadQuota();
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /** On phones the small card is a full-width sheet, so closing the full review must not bring it back over the page. */
+  function closeDrawer() {
+    setDrawer(null);
+    if (narrow) setSelected(null);
   }
 
   function reset() {
@@ -263,6 +297,7 @@ export function GamePage() {
         <p className="bubble-line">
           {v ? `“${toV(v.verdict) === "b" ? v.topAppeal : v.topConcern}”` : f ? explainFailure(f, short).short : stage === "idle" ? selPersona.tagline : "Still thinking. Their answer shows up here as soon as it’s in."}
         </p>
+        {v?.fix && <p className="bubble-fix">Would change their mind: {v.fix}</p>}
         <div className="bubble-actions">
           {(v || f) && (
             <button type="button" className="gbtn gbtn-sm" onClick={() => setDrawer(selPersona.id)}>
@@ -315,10 +350,33 @@ export function GamePage() {
       : meta?.mock
         ? "simulated AI (this site has no AI key)"
         : `a free run${quota ? ` (${quota.site.left} of ${quota.site.limit} left today)` : ""}`;
-  const draftIdea = (text: string) => {
-    if (keyMode === "own" && !draftKey) return Promise.reject(new Error("Add your API key first."));
-    return api.draftIdea({ idea: text, keyMode, ownKeys: draftKey ? [{ provider: draftKey.provider, apiKey: draftKey.apiKey, model: draftKey.model }] : undefined });
+  const helperKeys = () => {
+    if (keyMode === "own" && !draftKey) throw new Error("Add your API key first.");
+    return { keyMode, ownKeys: draftKey ? [{ provider: draftKey.provider, apiKey: draftKey.apiKey, model: draftKey.model }] : undefined };
   };
+  const draftIdea = (text: string) => {
+    try {
+      // Quick start knows about feature mode: the AI drafts the feature against the product description.
+      return api.draftIdea({ idea: text, ...helperKeys(), kind: brief.kind, productContext: brief.kind === "feature" ? brief.productContext : "" });
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  };
+  /** "Fix my idea with AI" on the results page; one call, same key the run used. */
+  const improveIdea = () => {
+    try {
+      return api.improveIdea(idea!.id, helperKeys());
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  };
+  /** Put the revised brief in the form; asking the council again is then one explicit click (a new run). */
+  function useRevised(b: IdeaBrief) {
+    setBrief(b);
+    setSelected(null);
+    navigate("/");
+    window.scrollTo({ top: 0 });
+  }
   const hud = {
     idle: { title: "Waiting for your idea", sub: `${total} personas in 5 groups`, foot: "Describe your idea on the left, then press “Ask the council”." },
     assembly: { title: "Everyone is heading to the square…", sub: "Getting ready", foot: planText ?? "Each person sets off when their question is sent." },
@@ -378,6 +436,7 @@ export function GamePage() {
             <Link to="/history" className="g-link">
               All ideas
             </Link>
+            <AccountButton />
             <span className="model-chip">
               <span aria-hidden="true" className="ok-dot" />
               {panelModel}
@@ -386,6 +445,21 @@ export function GamePage() {
         </div>
       </header>
 
+      {id && !idea && runError && (
+        <div className="g-wrap">
+          <div className="hist-state run-missing" role="alert">
+            <h2>{runError === "NOT_FOUND" ? "Can’t open this run" : "Couldn’t load this run"}</h2>
+            <p className="muted">
+              {runError === "NOT_FOUND"
+                ? "It may be private (only the person who ran it can open it), deleted, or the link may be wrong."
+                : runError}
+            </p>
+            <Link to="/" className="gbtn gbtn-sm hist-cta" onClick={() => setRunError(null)}>
+              Ask the council about your own idea →
+            </Link>
+          </div>
+        </div>
+      )}
       <main className="g-wrap g-main">
         <div className={`g-side ${stage === "idle" ? "" : "pinned"}`}>
           {stage === "idle" ? (
@@ -426,7 +500,7 @@ export function GamePage() {
           <section className="g-village-col" aria-labelledby="village-h" ref={villageRef}>
             <div className="g-col-head">
               <h2 id="village-h">The village</h2>
-              <span className="muted">{narrow ? "Swipe to look around. Tap a person to read their answer." : "Hover over a person to see who they are. Click to read their answer."}</span>
+              <span className="muted">{narrow ? "Tap a person to read their answer." : "Hover over a person to see who they are. Click to read their answer."}</span>
             </div>
             <div className="g-village-wrap">
               {personas.length > 0 ? (
@@ -440,14 +514,18 @@ export function GamePage() {
                   bubble={drawer ? null : bubble}
                   banner={banner}
                   ideaLabel={brief.title || "Your idea"}
+                  sheet={narrow}
+                  onDismiss={() => setSelected(null)}
+                  expandable={phone}
+                  shape={narrow ? "tall" : "wide"}
                 />
               ) : (
                 <div className="village-loading">{formError ? "Can't load the village." : "Building the village…"}</div>
               )}
               {drawerPersona && (
                 <>
-                  <div className="sheet-backdrop" onClick={() => setDrawer(null)} aria-hidden="true" />
-                  <ReviewPanel persona={drawerPersona} index={idxOf.get(drawerPersona.id) ?? 0} verdict={verdicts.get(drawerPersona.id)} failure={failures.get(drawerPersona.id)} impact={impact} onClose={() => setDrawer(null)} />
+                  <div className="sheet-backdrop" onClick={closeDrawer} aria-hidden="true" />
+                  <ReviewPanel persona={drawerPersona} index={idxOf.get(drawerPersona.id) ?? 0} verdict={verdicts.get(drawerPersona.id)} failure={failures.get(drawerPersona.id)} impact={impact} onClose={closeDrawer} />
                 </>
               )}
             </div>
@@ -497,9 +575,12 @@ export function GamePage() {
                 onReset={reset}
                 onCopy={copy}
                 copyLabel={copyLabel}
+                onImprove={improveIdea}
+                onUseRevised={useRevised}
+                improveSignal={fixSignal}
+                onPlanReady={() => setFixReady(true)}
               />
             )}
-            {stage === "idle" && <RecentProposals />}
             {stage === "failed" && (
               <section className="results">
                 <div className="card">
@@ -512,6 +593,21 @@ export function GamePage() {
           </div>
         </div>
       </main>
+      {/* Past submissions go last, below everything else on the page. */}
+      {stage === "idle" && (
+        <div className="g-wrap g-recent">
+          <RecentProposals />
+        </div>
+      )}
+      {stage === "result" && synthesis && idea && (idea.yours || ownerTokenFor(idea.id)) && !fixReady && (
+        <FixNudge
+          ideaId={idea.id}
+          verdict={synthesis.overallVerdict}
+          // Out of the way while a persona's card or full answer is open.
+          hidden={!!selected || !!drawer || fixSignal > 0}
+          onFix={() => setFixSignal((n) => n + 1)}
+        />
+      )}
       <DraftDialog
         open={draftOpen}
         onClose={() => setDraftOpen(false)}
@@ -519,11 +615,16 @@ export function GamePage() {
         onHideNextTime={setQuickStartDismissed}
         draft={draftIdea}
         source={draftSource}
+        featureOf={brief.kind === "feature" && brief.productContext ? productName(brief.productContext) || "your product" : null}
         blocked={runBlocked}
+        settings={{ kind: brief.kind, productContext: brief.productContext, hidden: brief.hidden }}
+        onSettings={(patch) => setBrief((b) => ({ ...b, ...patch }))}
         onDone={(b, run) => {
-          setBrief(b);
+          // The quick draft fills in the idea; keep the startup/feature choice, product description and privacy.
+          const merged = { ...b, kind: brief.kind, productContext: brief.productContext, hidden: brief.hidden };
+          setBrief(merged);
           setDraftOpen(false);
-          if (run) void submit(b);
+          if (run) void submit(merged);
         }}
       />
       <footer className="g-wrap g-foot muted">These answers come from AI personas. Treat them as a second opinion, not a promise.</footer>
@@ -548,9 +649,12 @@ function setQuickStartDismissed(off: boolean) {
   }
 }
 
-/** True below the given viewport width (phones / small tablets). */
-function useNarrow(px: number): boolean {
-  const query = `(max-width: ${px}px)`;
+/** Phones, upright or turned sideways (a sideways phone is wider than 760px but short). */
+const PHONE_QUERY = "(max-width: 760px), (pointer: coarse) and (max-height: 500px)";
+
+/** True below the given viewport width (phones / small tablets), or when the given media query matches. */
+function useNarrow(px: number | string): boolean {
+  const query = typeof px === "string" ? px : `(max-width: ${px}px)`;
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
   useEffect(() => {
     const mq = window.matchMedia(query);
@@ -560,4 +664,29 @@ function useNarrow(px: number): boolean {
     return () => mq.removeEventListener("change", on);
   }, [query]);
   return narrow;
+}
+
+const PENDING = "bon.pendingBrief";
+/** Keep the half-filled form while the visitor signs in on Google/GitHub (this tab only). */
+function savePendingBrief(b: IdeaBrief) {
+  try {
+    sessionStorage.setItem(PENDING, JSON.stringify(b));
+  } catch {
+    /* storage blocked: the form starts empty after signing in */
+  }
+}
+function readPendingBrief(): IdeaBrief | null {
+  try {
+    const v = sessionStorage.getItem(PENDING);
+    return v ? (JSON.parse(v) as IdeaBrief) : null;
+  } catch {
+    return null;
+  }
+}
+function clearPendingBrief() {
+  try {
+    sessionStorage.removeItem(PENDING);
+  } catch {
+    /* nothing to clear */
+  }
 }

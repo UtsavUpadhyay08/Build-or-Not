@@ -1,8 +1,12 @@
-import { useMemo, useState } from "react";
-import type { IdeaRecord, PersonaFailure, PersonaMeta, PersonaVerdict, Synthesis } from "../types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { IdeaBrief, IdeaRecord, ImprovePlan, PersonaFailure, PersonaMeta, PersonaVerdict, Synthesis } from "../types";
 import { VERDICT_WORD, VSTYLE, districtOf, explainFailure, providerLabel, skinFor, splitName, toV, type V } from "./model";
 
 interface Props {
+  /** Goes up by one each time the corner "Fix my idea" button is pressed: scroll to the card and start. */
+  improveSignal?: number;
+  /** The fix plan is on screen (the corner button can go). */
+  onPlanReady?: () => void;
   idea: IdeaRecord;
   personas: PersonaMeta[];
   verdicts: PersonaVerdict[];
@@ -12,11 +16,15 @@ interface Props {
   onReset: () => void;
   onCopy: () => void;
   copyLabel: string;
+  /** "Fix my idea with AI": one call that groups every persona's ask by weight. */
+  onImprove: () => Promise<{ plan: ImprovePlan; model: string; simulated: boolean }>;
+  /** Put the revised brief back in the form, ready to ask the council again. */
+  onUseRevised: (b: IdeaBrief) => void;
 }
 
 type SortKey = "score" | "district" | "name";
 
-export function Results({ idea, personas, verdicts, failures, synthesis: s, onOpen, onReset, onCopy, copyLabel }: Props) {
+export function Results({ idea, personas, verdicts, failures, synthesis: s, onOpen, onReset, onCopy, copyLabel, onImprove, onUseRevised, improveSignal = 0, onPlanReady }: Props) {
   const [sort, setSort] = useState<SortKey>("score");
   const idx = useMemo(() => new Map(personas.map((p, i) => [p.id, i])), [personas]);
   const byId = useMemo(() => new Map(personas.map((p) => [p.id, p])), [personas]);
@@ -123,6 +131,8 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
           ))}
         </div>
       </div>
+
+      <ImproveCard verdict={vKey} onImprove={onImprove} onUseRevised={onUseRevised} byId={byId} signal={improveSignal} onPlanReady={onPlanReady} />
 
       <div className="row">
         <div className="card grow2">
@@ -273,6 +283,9 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
       <div className="card">
         <div className="table-head">
           <h3 className="card-h">All scores</h3>
+          <span className="swipe-hint" aria-hidden="true">
+            Swipe for more →
+          </span>
           <label className="sort">
             Sort by{" "}
             <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
@@ -282,6 +295,7 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
             </select>
           </label>
         </div>
+        <div className="table-shell">
         <div className="table-wrap">
           <table className="scores">
             <thead>
@@ -304,7 +318,12 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
                   <td>
                     <button type="button" className="link-btn" onClick={() => onOpen(r.id)}>
                       <strong>{r.short}</strong>
-                      {r.role ? <span className="role">, {r.role}</span> : null}
+                      {r.role ? (
+                        <span className="role">
+                          <span className="role-sep">, </span>
+                          {r.role}
+                        </span>
+                      ) : null}
                     </button>
                   </td>
                   <td>
@@ -323,6 +342,7 @@ export function Results({ idea, personas, verdicts, failures, synthesis: s, onOp
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
 
@@ -350,6 +370,105 @@ function Bar({ label, n, mean, color, rank }: { label: string; n: number; mean: 
         <div style={{ width: `${((mean - 1) / 9) * 100}%`, background: color }} />
       </div>
       <span className="sbar-v">{mean.toFixed(1)}</span>
+    </div>
+  );
+}
+
+/**
+ * "Fix my idea with AI": turns the 45 individual asks into the smallest set of changes, heaviest
+ * first. The weights are computed by the server from the scores (11 - score per persona), so the
+ * order can't be talked up by the model.
+ */
+function ImproveCard({ verdict, onImprove, onUseRevised, byId, signal, onPlanReady }: { verdict: V; onImprove: Props["onImprove"]; onUseRevised: Props["onUseRevised"]; byId: Map<string, PersonaMeta>; signal: number; onPlanReady?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ plan: ImprovePlan; model: string; simulated: boolean } | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // The corner button was pressed: bring the card into view and start (unless already done or running).
+  useEffect(() => {
+    if (!signal) return;
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!result && !busy) void go();
+  }, [signal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function go() {
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await onImprove());
+      onPlanReady?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const name = (id: string) => splitName(byId.get(id)?.name ?? id).short;
+  const plan = result?.plan;
+  const maxW = plan ? Math.max(1, ...plan.changes.map((c) => c.weight)) : 1;
+
+  return (
+    <div ref={cardRef} className="card improve" id="fix-idea">
+      <div className="improve-head">
+        <div>
+          <h3 className="card-h">Fix the idea</h3>
+          <p className="muted improve-sub">
+            {verdict === "b"
+              ? "They’d build it — this finds the small changes that would push the score higher still."
+              : "Every persona said what would change their mind. One more AI call weighs all of it — unhappier reviewers count for more — and merges it into the few smallest changes."}
+          </p>
+        </div>
+        {!plan && (
+          <button type="button" className="gbtn gbtn-sm" disabled={busy} onClick={go}>
+            {busy ? "Weighing 45 opinions…" : "Fix my idea with AI"}
+          </button>
+        )}
+      </div>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+      {plan && (
+        <div className="improve-body">
+          {plan.keep && (
+            <p className="improve-keep">
+              <strong>Keep:</strong> {plan.keep}
+            </p>
+          )}
+          <ol className="improve-list">
+            {plan.changes.map((c) => (
+              <li key={c.title}>
+                <div className="improve-change-top">
+                  <strong>{c.title}</strong>
+                  <span className="muted">
+                    {c.personaIds.length} reviewer{c.personaIds.length === 1 ? "" : "s"} · weight {c.weight}
+                  </span>
+                </div>
+                <div className="track improve-track">
+                  <div style={{ width: `${(c.weight / maxW) * 100}%` }} />
+                </div>
+                <p className="improve-detail">{c.detail}</p>
+                {c.personaIds.length > 0 && <p className="improve-who">Answers {c.personaIds.slice(0, 4).map(name).join(", ")}{c.personaIds.length > 4 ? ` and ${c.personaIds.length - 4} more` : ""}</p>}
+              </li>
+            ))}
+          </ol>
+          <div className="improve-revised">
+            <div className="improve-revised-k">The idea with those changes applied</div>
+            <strong>{plan.revised.title}</strong>
+            <p>{plan.revised.description}</p>
+          </div>
+          <div className="improve-actions">
+            <button type="button" className="gbtn gbtn-sm" onClick={() => onUseRevised(plan.revised)}>
+              Rerun with these changes →
+            </button>
+            <span className="muted">Fills in the form so you can review it, then ask the council again. That’s a new run, so your daily limit applies.</span>
+          </div>
+          {result && <p className="improve-meta muted">Plan by {result.model}.{result.simulated ? " Simulated — add an API key for a real plan." : ""}</p>}
+        </div>
+      )}
     </div>
   );
 }

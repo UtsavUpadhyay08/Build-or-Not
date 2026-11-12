@@ -26,7 +26,7 @@ export function councilFor(mode: PanelMode, names: string[] = []): ManagedProvid
 
 /** Rough size of the idea text that goes into every persona prompt (for token estimates). */
 export function ideaChars(idea: IdeaBrief): number {
-  return [idea.title, idea.description, idea.targetAudience, idea.pricingModel, idea.competitors].join(" ").length + 300;
+  return [idea.title, idea.description, idea.targetAudience, idea.pricingModel, idea.competitors, idea.productContext ?? ""].join(" ").length + 300;
 }
 
 /** Everything a run needs, decided before it starts. */

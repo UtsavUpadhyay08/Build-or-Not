@@ -27,6 +27,8 @@ const KEY_A = "gsk_visitorAAAA1111aaaa2222";
 const KEY_B = "gsk_visitorBBBB3333bbbb4444";
 /** Which keys the fake Groq saw, and the score it gives each key so runs can't be mixed up silently. */
 const seen = new Map<string, number>();
+/** Every request body the fake Groq received (to check what the personas were shown). */
+const bodies: string[] = [];
 const SCORE: Record<string, number> = { [KEY_A]: 9, [KEY_B]: 2 };
 
 let fakeGroq: http.Server;
@@ -46,6 +48,7 @@ beforeAll(async () => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
+      bodies.push(body);
       res.setHeader("x-ratelimit-limit-tokens", "500000");
       res.setHeader("x-ratelimit-remaining-tokens", "500000");
       res.setHeader("x-ratelimit-remaining-requests", "1000");
@@ -58,11 +61,23 @@ beforeAll(async () => {
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: JSON.stringify(draft) } }], usage: { prompt_tokens: 10, completion_tokens: 10 } }));
       }
-      const synth = body.includes("topConcerns");
       const s = SCORE[key];
-      const content = synth
-        ? { topConcerns: [{ theme: "t", mentionCount: 1, example: "e" }], topAppeals: [{ theme: "a", mentionCount: 1, example: "e" }], summary: "s" }
-        : { verdict: s >= 7 ? "build" : "dont_build", score: s, reasoning: "r", topConcern: "c", topAppeal: "a" };
+      let content: unknown;
+      if (body.includes("submit_improve")) {
+        const ids = [...new Set([...body.matchAll(/\(id: ([a-z0-9_-]+)/g)].map((m) => m[1]))];
+        content = {
+          keep: "keep the core",
+          changes: [
+            { title: "Small change A", detail: "d", personaIds: ids.slice(0, 3) },
+            { title: "Big change B", detail: "d", personaIds: ids.slice(0, 10).concat("not-a-real-persona") },
+          ],
+          revised: { title: "t (revised)", description: "an idea, revised", targetAudience: "", pricingModel: "", competitors: "" },
+        };
+      } else if (body.includes("topConcerns")) {
+        content = { topConcerns: [{ theme: "t", mentionCount: 1, example: "e" }], topAppeals: [{ theme: "a", mentionCount: 1, example: "e" }], summary: "s" };
+      } else {
+        content = { verdict: s >= 7 ? "build" : "dont_build", score: s, reasoning: "r", topConcern: "c", topAppeal: "a", fix: `fix from key ${s}` };
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: body.length < 200 ? "hi" : JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 10 } }));
     });
@@ -302,4 +317,88 @@ describe("real visitor IP on Render (behind Cloudflare)", () => {
     for (let i = 0; i < 3; i++) await post("/api/ideas", brief, ip, { "true-client-ip": `198.18.1.${i}` });
     expect((await post("/api/ideas", brief, ip, { "true-client-ip": "198.18.1.99" })).status).toBe(429);
   });
+});
+
+describe("new feature for an existing product (description.md)", () => {
+  const product = "# Splitly\nSplitly is a bill-splitting app for flatmates in India. 40k monthly users. Free, with a paid tier for landlords.";
+  const feature = { ...brief, title: "Move-out settle up", description: "When a flatmate leaves mid-month, work out what everyone owes.", kind: "feature" };
+
+  it("needs the product description", async () => {
+    const res = await post("/api/ideas", { ...feature, keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_A }], providers: ["groq"] }, "198.51.100.71");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/description of your product/i);
+  });
+
+  it("refuses a description too long to send 45 times", async () => {
+    const res = await post("/api/ideas", { ...feature, productContext: "x".repeat(6001), keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_A }], providers: ["groq"] }, "198.51.100.72");
+    expect(res.status).toBe(400);
+  });
+
+  it("every persona is shown the product, marked as data, and the idea keeps it", async () => {
+    bodies.length = 0;
+    const res = await post("/api/ideas", { ...feature, productContext: product, keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_A }], providers: ["groq"] }, "198.51.100.73");
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const done = await waitDone(id);
+    expect(done.idea.kind).toBe("feature");
+    expect(done.idea.productContext).toContain("Splitly");
+    const personaCalls = bodies.filter((b) => b.includes("submit_verdict"));
+    expect(personaCalls.length).toBeGreaterThanOrEqual(36);
+    for (const b of personaCalls) {
+      expect(b).toContain("NEW FEATURE");
+      expect(b).toContain("<<<PRODUCT");
+      expect(b).toContain("40k monthly users");
+    }
+    // The list stays light: no product text there.
+    const list = await (await fetch(`${base}/api/ideas`)).json();
+    const row = list.find((x: { idea: { id: string } }) => x.idea.id === id);
+    expect(row.idea.kind).toBe("feature");
+    expect(row.idea.productContext).toBeUndefined();
+  });
+
+  it("a startup idea ignores any product text sent along", async () => {
+    bodies.length = 0;
+    const res = await post("/api/ideas", { ...brief, kind: "startup", productContext: product, keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_A }], providers: ["groq"] }, "198.51.100.74");
+    expect(res.status).toBe(201);
+    const done = await waitDone((await res.json()).id);
+    expect(done.idea.productContext ?? "").toBe("");
+    expect(bodies.some((b) => b.includes("40k monthly users"))).toBe(false);
+  });
+});
+
+describe("fix my idea with AI (/:id/improve)", () => {
+  it("builds a plan with server-computed weights, sorted heaviest first", async () => {
+    const res = await post("/api/ideas", { ...brief, keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_B }], providers: ["groq"] }, "198.51.100.81");
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const done = await waitDone(id);
+    expect(done.verdicts[0].fix).toMatch(/^fix from key/); // personas now say what would change their mind
+    const imp = await post(`/api/ideas/${id}/improve`, { keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_B }] }, "198.51.100.81");
+    expect(imp.status).toBe(200);
+    const { plan } = await imp.json();
+    // KEY_B scores everyone 2/10, so each ask weighs 9. B groups 10 real personas (90), A groups 3 (27).
+    expect(plan.changes.map((c: { title: string; weight: number }) => [c.title, c.weight])).toEqual([
+      ["Big change B", 90],
+      ["Small change A", 27],
+    ]);
+    expect(plan.changes[0].personaIds).not.toContain("not-a-real-persona"); // invented ids carry no weight
+    expect(plan.revised.description).toBe("an idea, revised");
+    expect(plan.revised.sliders).toEqual(brief.sliders); // sliders carry over, the model never touches them
+  });
+
+  it("404 on a missing idea; fix plans draw from the AI fill-in allowance", async () => {
+    const res = await post("/api/ideas/does-not-exist/improve", { keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_B }] }, "198.51.100.82");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("private runs", () => {
+  it("need an account: without signing in they're refused, and nothing is created", async () => {
+    const before = (await (await fetch(`${base}/api/ideas`)).json()).length;
+    const res = await post("/api/ideas", { ...brief, title: "Secret plan", hidden: true, keyMode: "own", ownKeys: [{ provider: "groq", apiKey: KEY_A }], providers: ["groq"] }, "198.51.100.91");
+    expect(res.status).toBe(401);
+    expect((await res.json()).needsSignIn).toBe(true);
+    expect((await (await fetch(`${base}/api/ideas`)).json()).length).toBe(before);
+  });
+  // Signed-in private runs, sharing across devices and the sign-in flows: see auth/auth.test.ts.
 });

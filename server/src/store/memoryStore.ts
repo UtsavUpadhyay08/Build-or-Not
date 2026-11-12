@@ -2,9 +2,19 @@
 import type { IdeaRecord, IdeaStatus, PersonaFailure, PersonaVerdict, Synthesis } from "../types.js";
 import type { EvalJudgment } from "../eval/types.js";
 import { evalKey, type Store, type VisitDay } from "./store.js";
+import { MemoryAuthStore } from "../auth/authStore.js";
 
 export class MemoryStore implements Store {
+  readonly auth = new MemoryAuthStore();
   ideas = new Map<string, IdeaRecord>();
+
+  async listIdeasByUser(userId: string, limit = 200) {
+    return (await this.listIdeas()).filter((i) => i.userId === userId).slice(0, limit);
+  }
+  async setIdeaOwner(id: string, userId: string) {
+    const i = this.ideas.get(id);
+    if (i) i.userId = userId;
+  }
   judgments = new Map<string, { ok: true; data: PersonaVerdict } | { ok: false; data: PersonaFailure }>();
   syntheses = new Map<string, Synthesis>();
   evals = new Map<string, EvalJudgment>();

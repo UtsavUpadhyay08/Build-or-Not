@@ -80,5 +80,7 @@ With no API key it runs on simulated models. For real answers, paste a free Groq
 - [Full guide](docs/GUIDE.md): setup, providers, troubleshooting, the YC experiment, tests
 - [Deploy for free](docs/GUIDE.md#deploy-for-free-render--mongodb-atlas): Render + MongoDB Atlas, step by step
 - [Design notes](DESIGN.md): concurrency, rate limits, measuring keys, security
+- [Roadmap](docs/ROADMAP.md): what's planned next
+- [Sign-in setup](docs/SIGN-IN.md): Google, GitHub and email-code accounts, private runs, how sessions are kept safe
 
 **Stack:** Node.js · Express · TypeScript · MongoDB · React · Vite · Vitest · Docker · Render

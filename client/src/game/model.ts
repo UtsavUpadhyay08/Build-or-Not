@@ -34,6 +34,14 @@ export const DISTRICTS: District[] = [
   { category: "Internal & Operational", label: "Internal & Ops", color: "#D97706", dark: "#A85C05", x: 532, y: 4 },
 ];
 
+/** A short name for a product description: its first heading, else its first line. */
+export function productName(md: string | undefined): string {
+  const lines = (md ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const heading = lines.find((l) => /^#{1,3}\s+\S/.test(l));
+  const name = (heading ?? lines[0] ?? "").replace(/^#+\s*/, "").replace(/[*_`]/g, "");
+  return name.length > 60 ? `${name.slice(0, 57)}…` : name;
+}
+
 export function districtOf(category: string): District {
   return DISTRICTS.find((d) => d.category === category) ?? DISTRICTS[0];
 }

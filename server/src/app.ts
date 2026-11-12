@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { config, MOCK_MODE } from "./config.js";
 import { PERSONAS, PERSONA_LIBRARY_VERSION } from "./personas.js";
 import { ideasRouter } from "./routes/ideas.js";
+import { authRouter } from "./routes/auth.js";
+import { sameOriginWrites } from "./auth/session.js";
 import { allProviders, capacityOf, providerHealth, providerKey } from "./llm/registry.js";
 import { keysRouter } from "./routes/keys.js";
 import { adminRouter, visitRouter } from "./routes/stats.js";
@@ -114,6 +116,9 @@ export function createApp(store: Store) {
     });
   });
 
+  // Signed-in requests that change something must come from this site (CSRF guard).
+  app.use("/api", sameOriginWrites(config.corsOrigin ? config.corsOrigin.split(",").map((o) => o.trim()) : []));
+  app.use("/api/auth", authRouter(store));
   app.use("/api/ideas", ideasRouter(store));
   app.use("/api/keys", keysRouter());
   app.use("/api/visit", visitRouter(store));

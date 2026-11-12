@@ -20,6 +20,7 @@ import { MongoClient, type Collection, type Db } from "mongodb";
 import type { IdeaRecord, IdeaStatus, PersonaFailure, PersonaVerdict, Synthesis } from "../types.js";
 import type { EvalJudgment } from "../eval/types.js";
 import { evalKey, type Store, type VisitDay } from "./store.js";
+import { MongoAuthStore } from "../auth/authStore.js";
 
 type IdeaDoc = Omit<IdeaRecord, "id"> & { _id: string };
 type JudgmentDoc = { _id: string; ok: true; data: PersonaVerdict; ideaId: string; createdAt: string } | { _id: string; ok: false; data: PersonaFailure; ideaId: string; createdAt: string };
@@ -29,7 +30,9 @@ type QuotaDoc = { _id: string; n: number; expiresAt: Date };
 type VisitDoc = { _id: string; day: string; visitor: string; counts: Record<string, number>; ref: string; firstPage: string; expiresAt: Date };
 
 export class MongoStore implements Store {
+  readonly auth: MongoAuthStore;
   private constructor(
+    db: Db,
     private readonly client: MongoClient,
     private readonly ideas: Collection<IdeaDoc>,
     private readonly judgments: Collection<JudgmentDoc>,
@@ -37,13 +40,16 @@ export class MongoStore implements Store {
     private readonly evalJudgments: Collection<EvalDoc>,
     private readonly quotas: Collection<QuotaDoc>,
     private readonly visits: Collection<VisitDoc>,
-  ) {}
+  ) {
+    this.auth = new MongoAuthStore(db);
+  }
 
   static async connect(uri: string): Promise<MongoStore> {
     const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
     await client.connect();
     const db: Db = client.db(databaseName(uri));
     const store = new MongoStore(
+      db,
       client,
       db.collection<IdeaDoc>("ideas"),
       db.collection<JudgmentDoc>("judgments"),
@@ -58,6 +64,8 @@ export class MongoStore implements Store {
 
   private async ensureIndexes(): Promise<void> {
     await Promise.all([
+      this.auth.ensureIndexes(),
+      this.ideas.createIndex({ userId: 1, createdAt: -1 }),
       this.ideas.createIndex({ createdAt: -1 }),
       this.ideas.createIndex({ status: 1 }),
       this.judgments.createIndex({ ideaId: 1 }),
@@ -83,6 +91,15 @@ export class MongoStore implements Store {
   async listIdeas(limit = 200): Promise<IdeaRecord[]> {
     const docs = await this.ideas.find().sort({ createdAt: -1 }).limit(limit).toArray();
     return docs.map(fromIdeaDoc);
+  }
+
+  async listIdeasByUser(userId: string, limit = 200): Promise<IdeaRecord[]> {
+    const docs = await this.ideas.find({ userId }).sort({ createdAt: -1 }).limit(limit).toArray();
+    return docs.map(fromIdeaDoc);
+  }
+
+  async setIdeaOwner(id: string, userId: string): Promise<void> {
+    await this.ideas.updateOne({ _id: id, userId: { $exists: false } }, { $set: { userId } });
   }
 
   async findIdeasByStatus(status: IdeaStatus): Promise<IdeaRecord[]> {

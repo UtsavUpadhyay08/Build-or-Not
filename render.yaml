@@ -23,6 +23,21 @@ services:
         generateValue: true
       - key: ADMIN_TOKEN # unlocks /stats (your visitor numbers); Render generates it, copy it from Environment
         generateValue: true
+      # Accounts (optional, see docs/SIGN-IN.md): each sign-in option switches on when its keys are set.
+      - key: PUBLIC_URL # https://<your-app>.onrender.com
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
       - key: PROVIDERS
         value: groq
       - key: FREE_RUNS_PER_DAY

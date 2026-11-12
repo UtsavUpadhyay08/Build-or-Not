@@ -266,3 +266,40 @@ export async function probeRateInfo(cfg: ProviderConfig, timeoutMs = 8000): Prom
 
   return { status: 200, info: {} }; // gemini, mock: nothing to read
 }
+
+/**
+ * Which keys share one account. Groq (and most providers) count limits per ACCOUNT, not per key, so
+ * five keys made in one account give no more capacity than one. Counting them five times made the
+ * pool send five times too much at once, and every key got rate-limited together.
+ *
+ * Keys are probed one after another, so a later key on the same account sees the earlier probe's
+ * request already counted: same daily limit, and 1-3 fewer requests left. Keys on separate accounts
+ * show unrelated counts (or the same count, when both are fresh). A wrong guess only makes the pool
+ * slower, never makes it fail.
+ *
+ * Returns a group number per key (keys in one group share an account), in probe order.
+ */
+export function sharedAccountGroups(infos: (RateInfo | null)[]): number[] {
+  const groups: number[] = [];
+  const lastOf: { info: RateInfo; group: number }[] = [];
+  infos.forEach((info, i) => {
+    let group = -1;
+    if (info && info.rpdLimit !== undefined && info.rpdRemaining !== undefined) {
+      for (let g = lastOf.length - 1; g >= 0; g--) {
+        const prev = lastOf[g].info;
+        const drop = (prev.rpdRemaining ?? NaN) - info.rpdRemaining;
+        if (prev.rpdLimit === info.rpdLimit && drop >= 1 && drop <= 3) {
+          group = lastOf[g].group;
+          lastOf[g].info = info;
+          break;
+        }
+      }
+    }
+    if (group === -1) {
+      group = i;
+      if (info) lastOf.push({ info, group });
+    }
+    groups.push(group);
+  });
+  return groups;
+}

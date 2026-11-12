@@ -1,6 +1,6 @@
 import type { ApiMeta, IdeaBrief, IdeaRecord } from "../types";
 import { SLIDER_FIELDS } from "../types";
-import { capacityLine, planFromServer, providerLabel } from "./model";
+import { productName, capacityLine, planFromServer, providerLabel } from "./model";
 
 interface Props {
   brief: IdeaBrief;
@@ -26,7 +26,9 @@ export function ProposalSummary({ brief, idea, meta, running, onReset }: Props) 
     : idea.panelMode === "mixed"
       ? `Mixed: ${providers ? providers.map(label).join(", ") : "all working models"}`
       : `One model: ${providers ? label(providers[0]) : "the default model"}`;
+  const isFeature = brief.kind === "feature" && !!brief.productContext;
   const extras = [
+    isFeature && ["Feature for", productName(brief.productContext) || "your product"],
     brief.targetAudience && ["For", brief.targetAudience],
     brief.pricingModel && ["Pricing", brief.pricingModel],
     brief.competitors && ["Instead of", brief.competitors],
@@ -35,7 +37,7 @@ export function ProposalSummary({ brief, idea, meta, running, onReset }: Props) 
   return (
     <section className="proposal proposal-compact" aria-labelledby="proposal-h">
       <div className="compact-top">
-        <div className="eyebrow">YOUR IDEA{running ? " · LOCKED" : ""}</div>
+        <div className="eyebrow">{isFeature ? "NEW FEATURE" : "YOUR IDEA"}{brief.hidden ? " · PRIVATE" : ""}{running ? " · LOCKED" : ""}</div>
         <h2 id="proposal-h">{brief.title || "Untitled idea"}</h2>
       </div>
       <p className="compact-desc">{brief.description}</p>

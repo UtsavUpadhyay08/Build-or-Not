@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSendPlan, estimateTokensPerCall, parseRateHeaders, planCapacity } from "./capacity.js";
+import { buildSendPlan, estimateTokensPerCall, parseRateHeaders, planCapacity, sharedAccountGroups } from "./capacity.js";
 import { TokenBucket } from "../core/tokenBucket.js";
 
 const headers = (h: Record<string, string>) => (k: string) => h[k] ?? null;
@@ -90,5 +90,24 @@ describe("token bucket reconfigure", () => {
     await Promise.all(waits);
     expect(released).toBe(3);
     expect(b.capacity).toBe(5);
+  });
+});
+
+describe("sharedAccountGroups: keys made in one account don't add capacity", () => {
+  const info = (left: number, limit = 1000) => ({ rpdLimit: limit, rpdRemaining: left, tpmLimit: 8000, tpmRemaining: 8000 });
+  it("probed one after another, keys on one account each see one request fewer", () => {
+    expect(sharedAccountGroups([info(990), info(989), info(988), info(987), info(986)])).toEqual([0, 0, 0, 0, 0]);
+  });
+  it("fresh keys on separate accounts show the same count: separate", () => {
+    expect(sharedAccountGroups([info(999), info(999), info(999)])).toEqual([0, 1, 2]);
+  });
+  it("mixed: two accounts, one of them with two keys", () => {
+    expect(sharedAccountGroups([info(500), info(999), info(499), info(998)])).toEqual([0, 1, 0, 1]);
+  });
+  it("a key that couldn't be measured is its own account", () => {
+    expect(sharedAccountGroups([info(500), null, info(499)])).toEqual([0, 1, 0]);
+  });
+  it("different daily limits are different accounts", () => {
+    expect(sharedAccountGroups([info(500, 1000), info(499, 14400)])).toEqual([0, 1]);
   });
 });

@@ -26,6 +26,7 @@ function mockVerdict(seed: number, label: string) {
     reasoning: `(mock ${label}) Placeholder judgment — add an API key in .env for a real, idea-specific reaction.`,
     topConcern: `(mock) concern #${seed % 7}`,
     topAppeal: `(mock) appeal #${seed % 5}`,
+    fix: `(mock) fix #${seed % 6}: narrow it to one audience first.`,
   };
 }
 
@@ -72,7 +73,7 @@ export class MockProvider implements LLMProvider {
 
       case "submit_draft": {
         // Simulated "fill it in": echo the idea back as a plausible brief.
-        const idea = req.user.replace(/^[\s\S]*?Idea:\s*/, "").trim().replace(/\s+/g, " ");
+        const idea = req.user.replace(/^[\s\S]*?(?:Feature idea|Idea):\s*/, "").trim().replace(/\s+/g, " ");
         const words = idea.split(" ").filter(Boolean);
         const title = words.slice(0, 4).join(" ").replace(/[.,;:!?]+$/, "") || "Untitled idea";
         const pick = (k: number) => 3 + ((seed >> k) % 6);
@@ -84,6 +85,31 @@ export class MockProvider implements LLMProvider {
             pricingModel: "(simulated) Free to start, paid plan later",
             competitors: "(simulated) Spreadsheets, existing apps",
             sliders: { reach: pick(1), buildCost: pick(4), userImportance: pick(7), complexity: pick(10), value: pick(13), risk: pick(16) },
+          },
+          usage,
+        };
+      }
+
+      case "submit_improve": {
+        // Group the first few persona ids found in the prompt into plausible mock changes.
+        const ids = [...new Set([...req.user.matchAll(/\(id: ([a-z0-9_-]+)/g)].map((m) => m[1]))];
+        const slice = (a: number, b: number) => ids.slice(a, Math.min(b, ids.length));
+        const title = /(?:^|\n)Title: (.+)/.exec(req.user)?.[1]?.trim() ?? "Your idea";
+        return {
+          data: {
+            keep: "(mock) The core pain is real — keep the one-click settle-up.",
+            changes: [
+              { title: "(mock) Narrow the first audience", detail: "(mock) Launch for one specific group before going broad.", personaIds: slice(0, 5) },
+              { title: "(mock) Explain the privacy story up front", detail: "(mock) Say what happens to the data on the landing page.", personaIds: slice(5, 8) },
+              { title: "(mock) Cut the hardest feature from v1", detail: "(mock) Ship without the riskiest integration first.", personaIds: slice(8, 10) },
+            ],
+            revised: {
+              title,
+              description: "(mock revised) The same idea with the three changes above applied. Add an API key in .env for a real revision.",
+              targetAudience: "(mock) The single group from change #1",
+              pricingModel: "(mock) Unchanged",
+              competitors: "(mock) Unchanged",
+            },
           },
           usage,
         };

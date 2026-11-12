@@ -1,3 +1,4 @@
+import { productName } from "./game/model";
 import type { IdeaRecord, PersonaFailure, PersonaVerdict, Synthesis } from "./types";
 
 const VERDICT_LABEL: Record<string, string> = { build: "Build it", maybe: "Maybe", dont_build: "Don’t build it" };
@@ -6,6 +7,11 @@ export function ideaToMarkdown(idea: IdeaRecord, verdicts: PersonaVerdict[], fai
   const lines: string[] = [];
   lines.push(`# ${idea.title}`);
   lines.push("");
+  if (idea.kind === "feature" && idea.productContext) {
+    const name = productName(idea.productContext);
+    lines.push(`_A new feature for ${name || "an existing product"}._`);
+    lines.push("");
+  }
   lines.push(idea.description);
   lines.push("");
   if (synthesis) {
@@ -36,6 +42,7 @@ export function ideaToMarkdown(idea: IdeaRecord, verdicts: PersonaVerdict[], fai
   lines.push("");
   for (const v of verdicts) {
     lines.push(`### ${personaName(v.personaId)} — ${VERDICT_LABEL[v.verdict]} (${v.score}/10) · ${v.model}`);
+    if (v.fix) lines.push(`_Would change their mind: ${v.fix}_`, "");
     lines.push(v.reasoning);
     lines.push(`- Concern: ${v.topConcern}`);
     lines.push(`- Appeal: ${v.topAppeal}`);

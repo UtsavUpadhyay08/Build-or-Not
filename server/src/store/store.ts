@@ -1,11 +1,19 @@
 import type { IdeaRecord, IdeaStatus, PersonaFailure, PersonaVerdict, Synthesis } from "../types.js";
 import type { EvalJudgment } from "../eval/types.js";
+import type { AuthStore } from "../auth/authStore.js";
 
 /**
  * Persistence boundary. The app talks to this interface; MongoStore implements it for real and
  * MemoryStore implements it for unit tests (so orchestration tests don't need a database).
  */
 export interface Store {
+  /** Accounts, sessions, sign-in states and email codes. */
+  readonly auth: AuthStore;
+  /** A signed-in person's runs, newest first (public and private). */
+  listIdeasByUser(userId: string, limit?: number): Promise<IdeaRecord[]>;
+  /** Attach an anonymous run to an account (after its owner signs in). */
+  setIdeaOwner(id: string, userId: string): Promise<void>;
+
   insertIdea(idea: IdeaRecord): Promise<void>;
   getIdea(id: string): Promise<IdeaRecord | null>;
   listIdeas(limit?: number): Promise<IdeaRecord[]>;

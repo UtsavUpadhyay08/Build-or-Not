@@ -12,7 +12,9 @@ import { bucketFromRpm, TokenBucket } from "../core/tokenBucket.js";
 import { redactSecrets } from "./redact.js";
 import { createProvider } from "./providers.js";
 import { checkProvider, type ProviderHealth } from "./keyCheck.js";
-import { buildSendPlan, estimateTokensPerCall, PANEL_SIZE, planCapacity, probeRateInfo, type Capacity, type RateInfo, type SendPlan } from "./capacity.js";
+import { buildSendPlan, estimateTokensPerCall, PANEL_SIZE, planCapacity, probeRateInfo, sharedAccountGroups, type Capacity, type RateInfo, type SendPlan } from "./capacity.js";
+
+const NICE_NAME: Record<string, string> = { groq: "Groq", openrouter: "OpenRouter", gemini: "Gemini", opencode: "OpenCode", openai: "OpenAI", anthropic: "Anthropic" };
 
 /** Stable id the UI uses to pick providers. Mock mode has three "mock" providers, told apart by model. */
 export function providerKey(p: { name: string; model: string }): string {
@@ -37,23 +39,37 @@ async function checkPooled(cfg: ProviderConfig): Promise<ProviderHealth> {
   if (!cfg.model && first.status === "ok") cfg.model = model;
   const rest = await Promise.all(keys.slice(1).map((apiKey) => checkProvider({ ...cfg, model: cfg.model || model, apiKey, apiKeys: undefined })));
   const all = [first, ...rest];
-  const good = keys.filter((_, i) => all[i].status === "ok" || all[i].status === "unreachable");
-  const bad = all.filter((h) => h.status !== "ok" && h.status !== "unreachable");
+  // The first key may be the one that's spent: take the model any working key settled on.
+  if (!cfg.model) cfg.model = all.find((h) => h.status === "ok")?.model ?? "";
+  // A key that is only used up for today stays in the pool: the pool rests it and tries it again
+  // later. Dropping it here (as before) kept it out until the server restarted.
+  const usable = (h: ProviderHealth) => h.status === "ok" || h.status === "unreachable" || h.status === "quota";
+  const good = keys.filter((_, i) => usable(all[i]));
+  const bad = all.filter((h) => !usable(h));
+  const spent = all.filter((h) => h.status === "quota");
   if (good.length) {
     cfg.apiKey = good[0];
     cfg.apiKeys = good.length > 1 ? good : undefined;
   }
   const best = all.find((h) => h.status === "ok") ?? all[0];
   const why: Record<string, string> = { bad_key: "rejected", no_credit: "no credit", quota: "used up today", bad_model: "model not found" };
-  const note = `${good.length} of ${keys.length} ${cfg.name} keys work${bad.length ? `. Not using: ${bad.map((h) => `${h.keyHint} (${why[h.status] ?? h.status})`).join(", ")}` : ""}.`;
+  const note =
+    `${good.length - spent.length} of ${keys.length} ${cfg.name} keys work` +
+    (spent.length ? `, ${spent.length} used up for today (kept, tried again later)` : "") +
+    (bad.length ? `. Not using: ${bad.map((h) => `${h.keyHint} (${why[h.status] ?? h.status})`).join(", ")}` : "") +
+    ".";
+  // Every key out for today: the provider as a whole reports "quota" and steps aside for the hour.
+  if (good.length && spent.length === good.length) return { ...all.find((h) => h.status === "quota")!, note };
   return { ...best, message: best.status === "ok" ? `${best.message} ${note}`.trim() : best.message, note: [best.note, note].filter(Boolean).join(" ") };
 }
 const cfgOf = new WeakMap<ManagedProvider, ProviderConfig>();
+/** *_RPM is per key: a pool of N keys can take N times that. */
+const keyCount = (cfg: ProviderConfig) => Math.max(1, cfg.apiKeys?.length ?? 1);
 
 function manage(cfg: ProviderConfig, modelOverride?: string): ManagedProvider {
   // Mock "providers" each get their own bucket so mixed mode behaves like three accounts.
   const bucketKey = cfg.name === "mock" ? cfg.model : cfg.name;
-  const p = new ManagedProvider(createProvider(cfg, modelOverride), bucketFor(bucketKey, cfg.rpm, cfg.burst));
+  const p = new ManagedProvider(createProvider(cfg, modelOverride), bucketFor(bucketKey, cfg.rpm * keyCount(cfg), cfg.burst));
   cfgOf.set(p, cfg);
   return p;
 }
@@ -105,8 +121,8 @@ export async function runHealthChecks(cfgs: ProviderConfig[] = config.providers)
     if (!p) return;
     p.disabledReason = null;
     p.disabledStatus = null;
-    if (h.status !== "ok" && h.status !== "unreachable") p.disabledReason = h.message;
-    else if (!cfg.model) p.disabledReason = `${cfg.name}: couldn't reach it to pick a free model. Set ${cfg.name.toUpperCase()}_MODEL in .env.`;
+    if (h.status !== "ok" && h.status !== "unreachable") p.disable(h.message, h.status);
+    else if (!cfg.model) p.disable(`${cfg.name}: couldn't reach it to pick a free model. Set ${cfg.name.toUpperCase()}_MODEL in .env.`, "bad_model");
   });
   const fresh = results.map((h, i) => ({ ...h, model: cfgs[i].model || h.model }));
   health = [...health.filter((h) => !fresh.some((f) => f.name === h.name) && !h.message.startsWith("(synthesis)")), ...fresh];
@@ -191,11 +207,11 @@ export async function measureProvider(p: ManagedProvider, ideaChars?: number, ti
     cap = {
       now: burst,
       burst,
-      perMinute: cfg.rpm,
+      perMinute: cfg.rpm * keyCount(cfg),
       dailyLeft: null,
       tokensPerCall,
       source: "setting",
-      detail: `Paced (PANEL_ALL_AT_ONCE=false): up to ${config.concurrency} at a time, ${cfg.rpm} a minute.`,
+      detail: `Paced (PANEL_ALL_AT_ONCE=false): up to ${config.concurrency} at a time, ${cfg.rpm * keyCount(cfg)} a minute.`,
       checkedAt: new Date().toISOString(),
     };
     remember(cap);
@@ -204,18 +220,31 @@ export async function measureProvider(p: ManagedProvider, ideaChars?: number, ti
 
   let info: RateInfo = {};
   let note = "";
-  // Several keys: measure each, and the pool can take the sum of what they allow.
+  // Several keys: measure each, and the pool can take the sum of what their ACCOUNTS allow.
   if (cfg.apiKeys && cfg.apiKeys.length > 1 && mode === "auto") {
-    const per = await Promise.all(
-      cfg.apiKeys.map(async (apiKey) => {
-        const one = await probeRateInfo({ ...cfg, apiKey, apiKeys: undefined }, timeoutMs).then((r) => r.info).catch(() => ({}) as RateInfo);
-        return planCapacity(cfg.name, one, { tokensPerCall, rpmSetting: rpmIsSet(cfg.name) ? cfg.rpm : undefined, rpmFallback: cfg.rpm });
-      }),
-    );
+    // One after another (not all at once): that's how keys sharing an account give themselves away.
+    const probes: { info: RateInfo; status: number }[] = [];
+    for (const apiKey of cfg.apiKeys) {
+      probes.push(await probeRateInfo({ ...cfg, apiKey, apiKeys: undefined }, timeoutMs).catch(() => ({ info: {} as RateInfo, status: 0 })));
+    }
+    const groups = sharedAccountGroups(probes.map((pr) => (pr.status === 200 ? pr.info : null)));
+    const per = probes.map((probe, i) => {
+      const one = planCapacity(cfg.name, probe.info, { tokensPerCall, rpmSetting: rpmIsSet(cfg.name) ? cfg.rpm : undefined, rpmFallback: cfg.rpm });
+      // A key at its limit (or out for today) adds nothing right now; nor does a second key on an
+      // account already counted. Counting those let the pool send more at once than it could take.
+      const counted = probe.status !== 429 && groups.indexOf(groups[i]) === i;
+      return counted ? one : { ...one, now: 0, burst: 0, perMinute: 0, dailyLeft: groups.indexOf(groups[i]) === i ? one.dailyLeft : 0 };
+    });
     const sum = (f: (c: Capacity) => number) => per.reduce((s, c) => s + f(c), 0);
     const pin = burstFor(cfg.name);
     const burst = Math.max(1, Math.min(PANEL_SIZE, pin ?? sum((c) => c.burst)));
     const daily = per.every((c) => c.dailyLeft === null) ? null : sum((c) => c.dailyLeft ?? 0);
+    const accounts = new Set(groups).size;
+    const limited = probes.filter((pr) => pr.status === 429).length;
+    const shared =
+      accounts < per.length
+        ? ` ${per.length} keys but they look like ${accounts === 1 ? "one account" : `${accounts} accounts`}: ${NICE_NAME[cfg.name] ?? cfg.name} limits each account, not each key, so only keys from different accounts add speed.`
+        : "";
     cap = {
       now: Math.min(burst, sum((c) => c.now)),
       burst,
@@ -223,9 +252,13 @@ export async function measureProvider(p: ManagedProvider, ideaChars?: number, ti
       dailyLeft: daily,
       tokensPerCall,
       source: pin ? "setting" : "measured",
-      detail: `${per.length} ${cfg.name} keys work together, so their limits add up. Each key: ${per[0].detail}`,
+      detail:
+        `${per.length} ${cfg.name} keys work together, so their accounts' limits add up.${shared}` +
+        (limited ? ` ${limited} ${limited === 1 ? "key is" : "keys are"} at their limit right now.` : "") +
+        ` Each key: ${(per.find((c) => c.perMinute > 0) ?? per[0]).detail}`,
       checkedAt: new Date().toISOString(),
     };
+    if (shared && !isPrivate(p)) console.warn(`[keys]${shared}`);
     p.bucket.reconfigure(cap.burst, cap.perMinute / 60, cap.now);
     remember(cap);
     return cap;
@@ -241,8 +274,8 @@ export async function measureProvider(p: ManagedProvider, ideaChars?: number, ti
   }
   cap = planCapacity(cfg.name, info, {
     tokensPerCall,
-    rpmSetting: rpmIsSet(cfg.name) ? cfg.rpm : undefined,
-    rpmFallback: cfg.rpm,
+    rpmSetting: rpmIsSet(cfg.name) ? cfg.rpm * keyCount(cfg) : undefined,
+    rpmFallback: cfg.rpm * keyCount(cfg),
     burstPin: burstFor(cfg.name),
     source: mode === "all" ? "forced" : cfg.name === "mock" ? "simulated" : undefined,
   });

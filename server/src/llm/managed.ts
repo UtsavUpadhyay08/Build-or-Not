@@ -11,6 +11,7 @@ import { TokenBucket, bucketFromRpm } from "../core/tokenBucket.js";
 import { defaultIsRetryable, ProviderError, withRetry } from "../core/retry.js";
 import type { CompletionRequest, CompletionResult, LLMProvider } from "./types.js";
 import { classify, explain } from "./keyCheck.js";
+import { DAILY_REST_MS, KeyPool } from "./keyPool.js";
 
 export interface ProviderStats {
   calls: number;
@@ -29,6 +30,26 @@ export class ManagedProvider implements LLMProvider {
    */
   disabledReason: string | null = null;
   disabledStatus: string | null = null;
+  /** When a "used up for today" switch-off happened. Unlike a rejected key, that one heals: see healQuota(). */
+  disabledAt = 0;
+
+  /** Switch the provider off (key check or a permanent-looking failure). */
+  disable(reason: string, status: string) {
+    this.disabledReason = reason;
+    this.disabledStatus = status;
+    this.disabledAt = Date.now();
+  }
+
+  /**
+   * A daily cap resets on its own, so a provider switched off for "quota" is let back in after an
+   * hour (the next call finds out whether the limit really reset). Before, it stayed off until restart.
+   */
+  private healQuota() {
+    if (this.disabledReason && this.disabledStatus === "quota" && Date.now() - this.disabledAt >= DAILY_REST_MS) {
+      this.disabledReason = null;
+      this.disabledStatus = null;
+    }
+  }
 
   /**
    * Cool-down for TRANSIENT trouble: free models are often "temporarily rate-limited upstream" for
@@ -43,6 +64,7 @@ export class ManagedProvider implements LLMProvider {
 
   /** Why this provider shouldn't get work right now (permanent or cooling down), or null if it's usable. */
   get unavailableReason(): string | null {
+    this.healQuota();
     if (this.disabledReason) return this.disabledReason;
     if (Date.now() < this.coolingUntil) return `${this.name} kept failing (${this.lastTransient}); paused for a few minutes while other providers take over.`;
     return null;
@@ -80,6 +102,7 @@ export class ManagedProvider implements LLMProvider {
   }
 
   async complete(req: CompletionRequest): Promise<CompletionResult> {
+    this.healQuota();
     if (this.disabledReason) throw tag(new ProviderError(this.disabledReason, this.name, 401), this.disabledStatus ?? "bad_key", 0);
     const cooling = this.unavailableReason;
     if (cooling) throw tag(new ProviderError(cooling, this.name, 503), "cooling", 0);
@@ -121,9 +144,11 @@ export class ManagedProvider implements LLMProvider {
       if (err instanceof ProviderError && err.status !== null && this.name !== "mock") {
         const status = classify(this.name, err.status, err.message);
         if (status === "bad_key" || status === "bad_model" || status === "no_credit" || status === "quota") {
-          this.disabledStatus ??= status;
-          this.disabledReason ??= explain({ name: this.name, model: this.model, apiKey: "" }, status, err.message);
-          throw tag(new ProviderError(this.disabledReason, this.name, err.status), status, attempts);
+          if (!this.disabledReason) {
+            // A key pool already words its own state ("all 5 groq keys have used up…"): keep that.
+            this.disable(this.inner instanceof KeyPool ? err.message : explain({ name: this.name, model: this.model, apiKey: "" }, status, err.message), status);
+          }
+          throw tag(new ProviderError(this.disabledReason ?? err.message, this.name, err.status), status, attempts);
         }
       }
       if (err && typeof err === "object") (err as any).attempts ??= attempts;

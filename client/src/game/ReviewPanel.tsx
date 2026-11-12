@@ -64,6 +64,12 @@ export function ReviewPanel({ persona, index, verdict, failure, impact, onClose 
             <div className="note-k">WHAT THEY LIKED</div>
             <div>{verdict.topAppeal}</div>
           </div>
+          {verdict.fix && (
+            <div className="note note-fix">
+              <div className="note-k">WHAT WOULD CHANGE THEIR MIND</div>
+              <div>{verdict.fix}</div>
+            </div>
+          )}
           <div className="review-meta">
             Answered by {providerLabel(verdict.provider)} · {verdict.model} in {(verdict.latencyMs / 1000).toFixed(1)}s · {(verdict.inputTokens + verdict.outputTokens).toLocaleString()} tokens
             {verdict.repaired ? " · first answer was broken, asked again" : ""}

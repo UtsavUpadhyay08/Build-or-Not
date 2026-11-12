@@ -406,3 +406,5 @@ if (PERSONAS.length !== 45) {
 export function personaById(id: string): Persona | undefined {
   return PERSONAS.find((p) => p.id === id);
 }
+
+export const PERSONA_BY_ID = new Map(PERSONAS.map((p) => [p.id, p]));

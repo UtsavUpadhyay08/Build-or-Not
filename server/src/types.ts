@@ -20,7 +20,20 @@ export interface IdeaBrief {
   pricingModel: string;
   competitors: string;
   sliders: IdeaSliders;
+  /** "startup": a new product. "feature": a new feature for a product that already exists. Missing = startup. */
+  kind?: IdeaKind;
+  /** Feature mode: what the existing product is (usually the visitor's description.md). */
+  productContext?: string;
+  /**
+   * Private run: left out of every public list, and only the browser holding the owner token can
+   * open it (anyone else, link or not, gets "not found"). Missing = public.
+   */
+  hidden?: boolean;
 }
+
+export type IdeaKind = "startup" | "feature";
+/** Product descriptions go to all 45 personas, so they're kept short (about 1,500 tokens). */
+export const PRODUCT_CONTEXT_MAX = 6000;
 
 export type IdeaStatus = "running" | "completed" | "failed";
 
@@ -39,12 +52,16 @@ export interface IdeaRecord extends IdeaBrief {
   keyMode?: "free" | "own";
   /** sha256 of the submitter's delete token. Never sent to clients (see publicIdea). */
   ownerHash?: string;
+  /** The account that ran it, when signed in. Never sent to clients (see publicIdea). */
+  userId?: string;
+  /** Set only in answers to its owner (never stored): "this one is yours". */
+  yours?: boolean;
   error?: string | null;
 }
 
 /** What the API shows about an idea: everything except the owner hash. */
-export function publicIdea(idea: IdeaRecord): Omit<IdeaRecord, "ownerHash"> {
-  const { ownerHash: _drop, ...rest } = idea;
+export function publicIdea(idea: IdeaRecord): Omit<IdeaRecord, "ownerHash" | "userId"> {
+  const { ownerHash: _drop, userId: _account, ...rest } = idea;
   return rest;
 }
 
@@ -66,6 +83,8 @@ export interface PersonaVerdict extends CallMeta {
   reasoning: string;
   topConcern: string;
   topAppeal: string;
+  /** The smallest change that would raise this persona's score, in their words. "" on old records. */
+  fix?: string;
   createdAt: string;
 }
 
