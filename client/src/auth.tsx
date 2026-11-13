@@ -5,7 +5,7 @@
  * (/api/auth/me). Google and GitHub sign-in leave the page and come back, so anything the
  * page wants to keep (the half-filled form) is saved first through `beforeLeave` hooks.
  */
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ownedTokens } from "./api";
 
@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [ready, setReady] = useState(false);
   const [providers, setProviders] = useState(NONE);
+  const [dev, setDev] = useState(false);
   const [dialog, setDialog] = useState<(SignInRequest & { error?: string }) | null>(null);
   const leaveHooks = useRef(new Set<() => void>());
   const location = useLocation();
@@ -66,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/auth/me").then((r) => r.json());
       setUser(res.user ?? null);
       setProviders({ ...NONE, ...res.providers });
+      setDev(!!res.dev);
       return (res.user ?? null) as AuthUser | null;
     } catch {
       return null;
@@ -120,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           reason={dialog.reason}
           initialError={dialog.error}
           providers={providers}
+          dev={dev}
           onClose={() => setDialog(null)}
           onLeave={() => leaveHooks.current.forEach((fn) => fn())}
           onSignedIn={async () => {
@@ -154,8 +157,12 @@ function ProviderIcon({ p }: { p: Exclude<Provider, "email"> }) {
   );
 }
 
-function SignInDialog({ reason, initialError, providers, onClose, onLeave, onSignedIn }: { reason?: string; initialError?: string; providers: Record<Provider, boolean>; onClose: () => void; onLeave: () => void; onSignedIn: () => Promise<void> }) {
+function SignInDialog({ reason, initialError, providers, dev, onClose, onLeave, onSignedIn }: { reason?: string; initialError?: string; providers: Record<Provider, boolean>; dev: boolean; onClose: () => void; onLeave: () => void; onSignedIn: () => Promise<void> }) {
   const [email, setEmail] = useState("");
+  /** Local development without an email service: the server hands the code back, shown here. */
+  const [devCode, setDevCode] = useState<string | null>(null);
+  /** Seconds until "Send a new code" can be pressed again. */
+  const [cooldown, setCooldown] = useState(0);
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"pick" | "code">("pick");
   const [busy, setBusy] = useState(false);
@@ -179,13 +186,22 @@ function SignInDialog({ reason, initialError, providers, onClose, onLeave, onSig
     if (step === "code") codeRef.current?.focus();
   }, [step]);
 
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
   async function sendCode(e?: React.FormEvent) {
     e?.preventDefault();
     setError(null);
     setBusy(true);
     try {
-      await post("/email/start", { email });
+      const res = await post("/email/start", { email: email.trim() });
+      setDevCode(res.devCode ?? null);
+      setCode(res.devCode ?? "");
       setStep("code");
+      setCooldown(30);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -198,7 +214,7 @@ function SignInDialog({ reason, initialError, providers, onClose, onLeave, onSig
     setError(null);
     setBusy(true);
     try {
-      await post("/email/verify", { email, code });
+      await post("/email/verify", { email: email.trim(), code });
       await onSignedIn();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -216,7 +232,13 @@ function SignInDialog({ reason, initialError, providers, onClose, onLeave, onSig
         </button>
         <div className="eyebrow">ACCOUNT</div>
         <h2 id="signin-h">{step === "code" ? "Check your email" : "Sign in"}</h2>
-        <p className="draft-sub">{step === "code" ? `We sent a 6-digit code to ${email}. It works for 10 minutes.` : reason ?? "Keep runs private and see all your runs on any device."}</p>
+        <p className="draft-sub">
+          {step === "code"
+            ? devCode
+              ? `Enter the 6-digit code for ${email.trim().toLowerCase()}.`
+              : `We sent a 6-digit code to ${email.trim().toLowerCase()}. It works for 10 minutes. Check spam if it isn’t there.`
+            : (reason ?? "Keep runs private and see all your runs on any device.")}
+        </p>
 
         {error && (
           <div className="form-error" role="alert">
@@ -225,6 +247,16 @@ function SignInDialog({ reason, initialError, providers, onClose, onLeave, onSig
         )}
 
         {nothing && <p className="blocked-note">Sign-in isn’t set up on this site yet.</p>}
+        {dev && step === "pick" && !oauth.length && (
+          <p className="signin-dev">
+            Running locally: Google and GitHub buttons show up once their keys are in <code>.env</code> (see <code>docs/SIGN-IN.md</code>). Email works now.
+          </p>
+        )}
+        {devCode && step === "code" && (
+          <p className="signin-dev">
+            Running locally with no email service, so no email was sent. Your code is <strong>{devCode}</strong>, already filled in.
+          </p>
+        )}
 
         {step === "pick" && (
           <>
@@ -272,9 +304,14 @@ function SignInDialog({ reason, initialError, providers, onClose, onLeave, onSig
             <button type="submit" className="gbtn gbtn-sm" disabled={busy || code.length !== 6}>
               {busy ? "Checking…" : "Sign in"}
             </button>
-            <button type="button" className="signin-link" onClick={() => (setStep("pick"), setCode(""), setError(null))} disabled={busy}>
-              Use a different email
-            </button>
+            <div className="signin-links">
+              <button type="button" className="signin-link" onClick={() => void sendCode()} disabled={busy || cooldown > 0}>
+                {cooldown > 0 ? `Send a new code (${cooldown}s)` : "Send a new code"}
+              </button>
+              <button type="button" className="signin-link" onClick={() => (setStep("pick"), setCode(""), setDevCode(null), setError(null))} disabled={busy}>
+                Use a different email
+              </button>
+            </div>
           </form>
         )}
 
@@ -289,6 +326,18 @@ export function AccountButton() {
   const { user, ready, openSignIn, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Keep the menu on screen: on a phone the button isn't at the right edge, so a right-aligned
+  // menu would run off the left side.
+  useLayoutEffect(() => {
+    const m = menuRef.current;
+    if (!open || !m) return;
+    m.style.transform = "";
+    const r = m.getBoundingClientRect();
+    const pad = 8;
+    const shift = r.left < pad ? pad - r.left : r.right > window.innerWidth - pad ? window.innerWidth - pad - r.right : 0;
+    if (shift) m.style.transform = `translateX(${shift}px)`;
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
@@ -316,7 +365,7 @@ export function AccountButton() {
         <span className="account-name">{label}</span>
       </button>
       {open && (
-        <div className="account-menu" role="menu">
+        <div ref={menuRef} className="account-menu" role="menu">
           <div className="account-menu-who">
             <strong>{user.name || "Signed in"}</strong>
             {user.email && <span>{user.email}</span>}

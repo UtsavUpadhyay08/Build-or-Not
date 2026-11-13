@@ -10,7 +10,7 @@ import { z } from "zod";
 import { config, MOCK_MODE } from "../config.js";
 import { PERSONAS, PERSONA_LIBRARY_VERSION } from "../personas.js";
 import type { Store } from "../store/store.js";
-import { PRODUCT_CONTEXT_MAX, publicIdea, type IdeaFullState, type IdeaRecord } from "../types.js";
+import { PRODUCT_CONTEXT_MAX, PRODUCT_CONTEXT_MIN, publicIdea, type IdeaFullState, type IdeaRecord } from "../types.js";
 import { existingEmitter, type ProgressEvent } from "../panel/runPanel.js";
 import { isRunning, prepareRun, startPanel } from "../panel/service.js";
 import { hasUsableProvider, panelProviders, primaryProvider, privateCouncil, providerHealth, providerKey } from "../llm/registry.js";
@@ -76,7 +76,7 @@ export function ideasRouter(store: Store): Router {
       const parsed = draftRequestSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Describe your idea first." });
       const { idea, keyMode, ownKeys = [], kind, productContext } = parsed.data;
-      const feature = kind === "feature" && productContext.length >= 40;
+      const feature = kind === "feature" && productContext.length >= PRODUCT_CONTEXT_MIN;
 
       let provider;
       if (keyMode === "own") {
@@ -178,7 +178,7 @@ export function ideasRouter(store: Store): Router {
       const { panelMode = config.panelMode, providers = [], keyMode, ownKeys = [], ...brief } = parsed.data;
       const user = await currentUser(store, req);
       if (brief.hidden && !user) return res.status(401).json({ error: "Sign in to keep a run private.", needsSignIn: true });
-      if (brief.kind === "feature" && brief.productContext.length < 40) {
+      if (brief.kind === "feature" && brief.productContext.length < PRODUCT_CONTEXT_MIN) {
         return res.status(400).json({ error: "For a new feature, add a short description of your product (upload its description.md or paste a few lines)." });
       }
       if (brief.kind !== "feature") brief.productContext = "";

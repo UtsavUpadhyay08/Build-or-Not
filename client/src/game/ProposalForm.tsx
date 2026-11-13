@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { ApiMeta, IdeaBrief, IdeaSliders, PanelMode } from "../types";
-import { PRODUCT_CONTEXT_MAX, SLIDER_FIELDS } from "../types";
+import { PRODUCT_CONTEXT_MAX, PRODUCT_CONTEXT_MIN, SLIDER_FIELDS } from "../types";
 import { useAuth } from "../auth";
 import { previewPlan } from "./model";
 
@@ -45,7 +45,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
   const { user } = useAuth();
   const feature = brief.kind === "feature";
   const product = brief.productContext ?? "";
-  const productOk = !feature || product.trim().length >= 40;
+  const productOk = !feature || product.trim().length >= PRODUCT_CONTEXT_MIN;
   const usable = meta?.providers.filter((p) => p.usable) ?? [];
   const unusable = meta?.providers.filter((p) => !p.usable) ?? [];
   const label = (p: { name: string; model: string }) => (p.name === "mock" ? `${p.model} (simulated)` : `${p.name} · ${p.model}`);
@@ -60,7 +60,7 @@ export function ProposalForm({ brief, onBrief, council, onCouncil, meta, locked,
     : feature && !product.trim()
       ? "Add your product’s description first (upload its description.md, or paste a few lines)."
       : feature && !productOk
-        ? "Tell the council a little more about your product (a few lines at least)."
+        ? `Add a few more words about your product (at least ${PRODUCT_CONTEXT_MIN} characters).`
         : product.length > PRODUCT_CONTEXT_MAX
           ? `Shorten the product description to ${PRODUCT_CONTEXT_MAX.toLocaleString("en")} characters.`
           : !brief.title.trim() && !brief.description.trim()
@@ -252,6 +252,7 @@ function saveProduct(v: string) {
 /** Upload (or paste) the product's description.md. Every persona reads it before judging the feature. */
 export function ProductBox({ value, locked, onChange }: { value: string; locked: boolean; onChange: (v: string) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const countId = `product-count-${useId()}`;
   const [fileName, setFileName] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const over = value.length > PRODUCT_CONTEXT_MAX;
@@ -272,7 +273,8 @@ export function ProductBox({ value, locked, onChange }: { value: string; locked:
       setProblem("That file is very large. Upload a shorter description (a page or two).");
       return;
     }
-    const text = (await file.text()).replace(/\r\n/g, "\n").trim();
+    // Windows editors often add a byte-order mark and \r\n line endings: drop both.
+    const text = (await file.text()).replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
     setFileName(file.name);
     change(text);
     if (text.length > PRODUCT_CONTEXT_MAX) setProblem(`It’s ${text.length.toLocaleString("en")} characters. Trim it below to ${PRODUCT_CONTEXT_MAX.toLocaleString("en")}: each of the 45 personas reads it.`);
@@ -286,7 +288,7 @@ export function ProductBox({ value, locked, onChange }: { value: string; locked:
           <div className="product-sub">Upload its <code>description.md</code>, or paste what it is, who uses it and what it does today.</div>
         </div>
         <button type="button" className="parch-btn product-upload" disabled={locked} onClick={() => fileRef.current?.click()}>
-          {value ? "Replace file" : "Upload .md"}
+          {fileName ? "Upload another" : "Upload .md"}
         </button>
         <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden onChange={(e) => (void pick(e.target.files?.[0]), (e.target.value = ""))} />
       </div>
@@ -295,17 +297,18 @@ export function ProductBox({ value, locked, onChange }: { value: string; locked:
         <span className="sr-only">Product description</span>
         <textarea
           className="field product-text"
-          rows={value ? 6 : 4}
+          rows={6}
           value={value}
           disabled={locked}
           onChange={(e) => change(e.target.value)}
+          aria-describedby={countId}
           placeholder={"# My product\nWhat it is, who uses it, the main features today, pricing."}
         />
       </label>
-      <div className={`product-count ${over ? "over" : ""}`}>
+      <div id={countId} className={`product-count ${over ? "over" : ""}`}>
         {value.length.toLocaleString("en")} / {PRODUCT_CONTEXT_MAX.toLocaleString("en")} characters
         {value && !locked && (
-          <button type="button" className="link-btn" onClick={() => (change(""), setFileName(null), setProblem(null))}>
+          <button type="button" className="link-btn" onClick={() => (change(""), setFileName(null), setProblem(null), fileRef.current && (fileRef.current.value = ""))}>
             Clear
           </button>
         )}
@@ -343,10 +346,12 @@ export function KindPick({ feature, locked, onStartup, onFeature }: { feature: b
 export function PrivacyToggle({ hidden, locked, onChange }: { hidden: boolean; locked: boolean; onChange: (hidden: boolean) => void }) {
   const { user, openSignIn } = useAuth();
   const needsSignIn = hidden && !user;
+  // Unique per copy: the form and the popup both show this switch.
+  const inputId = `privacy-${useId()}`;
   return (
     <div className={`privacy-row ${hidden ? "on" : ""}`}>
       <input
-        id="privacy-toggle"
+        id={inputId}
         type="checkbox"
         checked={hidden}
         disabled={locked}
@@ -356,7 +361,7 @@ export function PrivacyToggle({ hidden, locked, onChange }: { hidden: boolean; l
         }}
       />
       <span>
-        <label htmlFor="privacy-toggle">
+        <label htmlFor={inputId}>
           <strong>Keep this run private</strong>
         </label>
         <span>

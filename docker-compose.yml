@@ -20,6 +20,10 @@ services:
         required: false
     environment:
       MONGODB_URI: mongodb://mongo:27017/build-or-not
+      # This container runs on your own machine, so by default it behaves like `npm run dev` for
+      # sign-in: the email code shows on screen, no email service needed. To try it exactly as
+      # Render runs it: set APP_NODE_ENV=production in .env (then email needs RESEND_API_KEY).
+      NODE_ENV: ${APP_NODE_ENV:-development}
     depends_on:
       mongo:
         condition: service_healthy

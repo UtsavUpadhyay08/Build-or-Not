@@ -118,6 +118,20 @@ describe("who's signed in", () => {
   });
 });
 
+describe("running locally", () => {
+  it("without an email service, the code comes back to the page so you can still sign in", async () => {
+    const res = await (await call("/api/auth/email/start", { body: { email: "local@example.com" }, headers: { "x-forwarded-for": "203.0.113.250" } })).json();
+    expect(res.devCode).toBe(sentCodes.at(-1)!.code);
+    expect((await (await call("/api/auth/me")).json()).dev).toBe(true);
+  });
+
+  it("behind an https proxy, sign-in sends Google/GitHub back to the https address", async () => {
+    const start = await call("/api/auth/github/start", { headers: { "x-forwarded-proto": "https" } });
+    const redirect = new URL(start.headers.get("location")!).searchParams.get("redirect_uri")!;
+    expect(redirect).toMatch(/^https:\/\/127\.0\.0\.1:\d+\/api\/auth\/github\/callback$/);
+  });
+});
+
 describe("email code", () => {
   it("signs in with the right code, once; the cookie is httpOnly and SameSite", async () => {
     const email = "first@example.com";

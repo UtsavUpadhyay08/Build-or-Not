@@ -34,6 +34,8 @@ export interface IdeaBrief {
 export type IdeaKind = "startup" | "feature";
 /** Product descriptions go to all 45 personas, so they're kept short (about 1,500 tokens). */
 export const PRODUCT_CONTEXT_MAX = 6000;
+/** Shortest product description that counts (a name and a few words is enough: "Splitly, a rent-splitting app"). */
+export const PRODUCT_CONTEXT_MIN = 10;
 
 export type IdeaStatus = "running" | "completed" | "failed";
 

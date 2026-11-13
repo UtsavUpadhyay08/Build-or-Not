@@ -18,7 +18,7 @@ import { z } from "zod";
 import type { Store } from "../store/store.js";
 import { authorizeUrl, configuredProviders, finishSignIn, type OAuthProviderName } from "../auth/providers.js";
 import { currentUser, endSession, publicOrigin, randomToken, sha256, startSession } from "../auth/session.js";
-import { sendSignInCode } from "../auth/email.js";
+import { devEmail, sendSignInCode } from "../auth/email.js";
 import { visitorId } from "../security/visitor.js";
 import type { User } from "../auth/authStore.js";
 
@@ -48,7 +48,8 @@ export function authRouter(store: Store) {
   r.get(
     "/me",
     ah(async (req, res) => {
-      res.json({ user: publicUser(await currentUser(store, req)), providers: configuredProviders() });
+      // `dev`: running locally without production settings (the sign-in screen explains what's missing).
+      res.json({ user: publicUser(await currentUser(store, req)), providers: configuredProviders(), dev: process.env.NODE_ENV !== "production" });
     }),
   );
 
@@ -115,7 +116,9 @@ export function authRouter(store: Store) {
         return res.status(502).json({ error: "Couldn’t send the email just now. Try again in a minute." });
       }
       // Same answer whether or not an account exists: nobody can probe which emails are registered.
-      res.json({ ok: true, minutes: CODE_MINUTES });
+      // On your own machine without an email service, the code comes back here so you can sign in
+      // (never in production: there it's emailed or email sign-in is off).
+      res.json({ ok: true, minutes: CODE_MINUTES, ...(devEmail() ? { devCode: code } : {}) });
     }),
   );
 

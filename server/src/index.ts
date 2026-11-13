@@ -5,6 +5,7 @@ import { redactSecrets } from "./llm/redact.js";
 import { createApp } from "./app.js";
 import { resumeInterrupted } from "./panel/service.js";
 import { capacityOf, hasUsableProvider, measureAll, panelProviders, runHealthChecks } from "./llm/registry.js";
+import { configuredProviders } from "./auth/providers.js";
 
 async function main() {
   let store: MongoStore;
@@ -41,6 +42,15 @@ async function main() {
   const resumed = await resumeInterrupted(store);
   if (resumed) console.log(`Resuming ${resumed} panel run(s) interrupted by the last shutdown.`);
 
+  // Google/GitHub sign-in needs the site's real address for its callback URLs.
+  const oauthOn = !!(process.env.GOOGLE_CLIENT_ID || process.env.GITHUB_CLIENT_ID);
+  if (oauthOn && process.env.NODE_ENV === "production" && !process.env.PUBLIC_URL?.trim()) {
+    console.warn("[auth] PUBLIC_URL isn't set. Set it to the site's https address so Google/GitHub sign-in redirects back correctly.");
+  }
+  const signIn = configuredProviders();
+  if (!signIn.google && !signIn.github && !signIn.email) {
+    console.warn("[auth] No sign-in option is switched on, so private runs can't be used. Add RESEND_API_KEY and/or Google/GitHub keys (docs/SIGN-IN.md).");
+  }
   const server = createApp(store).listen(config.port, () => {
     const providers = config.providers.map((p) => `${p.name}/${p.model}`).join(", ");
     console.log(`Build or Not server on http://localhost:${config.port} — ${MOCK_MODE ? "MOCK MODE (no API keys set)" : providers} — panel mode: ${config.panelMode} — send mode: ${config.sendMode}`);

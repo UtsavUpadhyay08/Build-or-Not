@@ -27,5 +27,8 @@ export async function sendSignInCode(email: string, code: string): Promise<void>
   if (!res.ok) throw new Error(`Resend answered ${res.status}`);
 }
 
+/** True when codes aren't really emailed: no RESEND_API_KEY, and not production. */
+export const devEmail = () => !process.env.RESEND_API_KEY?.trim() && process.env.NODE_ENV !== "production";
+
 /** Dev/test only: codes "sent" without an email service, newest last. */
 export const sentCodes: { email: string; code: string }[] = [];

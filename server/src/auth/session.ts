@@ -21,7 +21,12 @@ export const randomToken = (bytes = 32) => randomBytes(bytes).toString("base64ur
 export function publicOrigin(req: Request): string {
   const env = process.env.PUBLIC_URL?.trim();
   if (env) return new URL(env).origin;
-  return `${req.protocol}://${req.get("host")}`;
+  // Behind a hosting proxy (Render, etc.) the request reaches us as http even when the visitor used
+  // https. The proxy says which in X-Forwarded-Proto. (Only the scheme is taken from it; a browser
+  // can't set this header on a cross-site request, so it can't be used to get around the CSRF check.)
+  const fwd = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = fwd === "https" || fwd === "http" ? fwd : req.protocol;
+  return `${proto}://${req.get("host")}`;
 }
 
 function secureCookies(req: Request): boolean {

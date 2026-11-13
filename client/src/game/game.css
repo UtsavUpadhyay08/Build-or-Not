@@ -552,6 +552,7 @@ textarea.field { resize: vertical; }
 .draft-actions .gbtn { min-height: 46px; font-size: 15px; }
 .draft-actions .gbtn.ghost { background: transparent; color: #6b4f2a; box-shadow: inset 0 0 0 2px #e5cfa5; }
 .draft-wait { margin: 0; font: 700 12.5px/1.4 var(--body); color: #8a6a3a; text-align: right; }
+.draft-missing { margin: 0; font: 700 12.5px/1.4 var(--body); color: #8a5a1a; background: #fbe9cf; border-radius: 10px; padding: 8px 12px; }
 .draft-x { position: absolute; top: 12px; right: 14px; width: 36px; height: 36px; border-radius: 10px; border: 0; background: transparent; color: #8a6a3a; font: 400 26px/1 var(--body); cursor: pointer; }
 .draft-x:hover { background: #f5e6c8; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -717,3 +718,8 @@ textarea.field { resize: vertical; }
   .fix-pop { right: 12px; left: 12px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .fix-pop, .fix-pill { animation: none; } }
+.signin-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+.signin-link:disabled { color: #a8916c; cursor: default; }
+.signin-dev { margin: 0; padding: 10px 12px; border-radius: 12px; background: #eef4ff; border: 1px solid #bfd3f5; color: #1e3a6e; font: 700 13px/1.45 var(--body); }
+.signin-dev code { font: 800 12px/1 ui-monospace, monospace; background: #dbe7fb; padding: 1px 4px; border-radius: 4px; }
+.signin-dev strong { font: 900 15px/1 ui-monospace, monospace; letter-spacing: 0.15em; }

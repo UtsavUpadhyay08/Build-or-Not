@@ -42,6 +42,8 @@ export interface IdeaBrief {
 export type IdeaKind = "startup" | "feature";
 /** Same cap as the server: every persona reads the product description. */
 export const PRODUCT_CONTEXT_MAX = 6000;
+/** Shortest product description that counts (a name and a few words is enough: "Splitly, a rent-splitting app"). */
+export const PRODUCT_CONTEXT_MIN = 10;
 
 export type IdeaStatus = "running" | "completed" | "failed";
 
